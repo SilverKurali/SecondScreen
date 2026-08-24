@@ -27,7 +27,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="PSP 扩展屏"
+                android:text="SecondScreen 扩展屏"
                 android:textSize="28sp"
                 android:textColor="@android:color/white"
                 android:textStyle="bold"
@@ -127,37 +127,31 @@
                     android:textSize="14sp"
                     android:layout_marginTop="12dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/ipLayout"
+                <EditText
+                    android:id="@+id/ipInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="主机 IP"
-                    android:theme="@style/ThemeOverlay.AppCompat.Dark">
+                    android:inputType="number|numberDecimal|text"
+                    android:text="192.168.1.100"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#666666"
+                    android:background="#333333"
+                    android:padding="12dp"
+                    android:layout_marginBottom="8dp" />
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/ipInput"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number|numberDecimal|text"
-                        android:text="192.168.1.100"
-                        android:textColor="@android:color/white" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/portLayout"
+                <EditText
+                    android:id="@+id/portInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="端口"
-                    android:theme="@style/ThemeOverlay.AppCompat.Dark">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/portInput"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="4747"
-                        android:textColor="@android:color/white" />
-                </com.google.android.material.textfield.TextInputLayout>
+                    android:inputType="number"
+                    android:text="4747"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#666666"
+                    android:background="#333333"
+                    android:padding="12dp"
+                    android:layout_marginBottom="8dp" />
 
                 <Button
                     android:id="@+id/connectBtn"
@@ -181,7 +175,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🔌 USB 有线连接"
+                    android:text="USB 有线连接"
                     android:textColor="#FFFFFF"
                     android:textSize="18sp"
                     android:layout_marginBottom="8dp" />
@@ -224,7 +218,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="📡 无线 ADB 连接"
+                    android:text="无线 ADB 连接"
                     android:textColor="#FFFFFF"
                     android:textSize="18sp"
                     android:layout_marginBottom="8dp" />
@@ -267,7 +261,7 @@
                 android:id="@+id/versionInfo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="PSP v0.1.0"
+                android:text="SecondScreen v0.2.0"
                 android:textColor="#555555"
                 android:textSize="12sp"
                 android:layout_marginTop="12dp" />
