@@ -285,9 +285,8 @@ class MainActivity : AppCompatActivity() {
         bubble.scaleType = ImageView.ScaleType.CENTER_INSIDE
         bubble.setPadding(12, 12, 12, 12)
 
-        val params = RelativeLayout.LayoutParams(56.dpToPx(), 56.dpToPx())
-        params.addRule(RelativeLayout.ALIGN_PARENT_END)
-        params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+        val params = android.widget.FrameLayout.LayoutParams(56.dpToPx(), 56.dpToPx())
+        params.gravity = (android.view.Gravity.BOTTOM or android.view.Gravity.END)
         params.setMargins(0, 0, 16.dpToPx(), 80.dpToPx())
         bubble.layoutParams = params
         bubble.visibility = View.GONE
