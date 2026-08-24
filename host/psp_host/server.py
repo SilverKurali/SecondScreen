@@ -153,15 +153,21 @@ class Session:
             gi.require_version("Gst", "1.0")
             from gi.repository import Gst, GLib  # noqa: F401
 
-            # Use the negotiated codec from handshake, not the CLI default.
+            # Use the negotiated codec/resolution from handshake, not the CLI default.
             if hasattr(self, '_session_params') and self._session_params:
                 negotiated_codec = self._session_params.get("codec")
                 if negotiated_codec:
                     self._args.codec = negotiated_codec
+                # 使用协商后的分辨率(用户可能在安卓端改了画质设置)
+                neg_w = self._session_params.get("width")
+                neg_h = self._session_params.get("height")
+                if neg_w and neg_h:
+                    self._args.width = neg_w
+                    self._args.height = neg_h
+                    logger.info("Using negotiated resolution: %dx%d", neg_w, neg_h)
                 # 如果客户端请求硬件编码,在 args 中标记
                 use_hw = self._session_params.get("use_hardware_encoder", False)
                 if use_hw:
-                    # 暂时标记,后续通过修改 encoder 优先级实现
                     self._args._use_hardware_encoder = True
 
             codec, pipeline_str, sink_name = build_pipeline(self._args)
