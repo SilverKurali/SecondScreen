@@ -8,6 +8,7 @@ import queue
 import socket
 import struct
 import threading
+import time
 import traceback
 
 from . import protocol as proto
@@ -60,7 +61,11 @@ class Session:
             writer = threading.Thread(target=self._writer_loop, daemon=True, name="writer")
             writer.start()
 
-            # Step 5: Reader loop (input processing)
+            # Step 5: Start keepalive thread (pings phone while waiting for first frame)
+            keepalive = threading.Thread(target=self._keepalive_loop, daemon=True, name="keepalive")
+            keepalive.start()
+
+            # Step 6: Reader loop (input processing)
             self._reader_loop()
 
         except Exception:
@@ -143,17 +148,79 @@ class Session:
                 logger.error("Appsink '%s' not found in pipeline", sink_name)
                 return False
 
-            sink.connect("new-sample", self._on_new_sample)
+            # Use a pull-based approach instead of signal callbacks
+            # to avoid GStreamer callback issues
+            self._appsink = sink
+            sink.set_property("emit-signals", False)
+
             self._pipe.set_state(Gst.State.PLAYING)
             logger.info("Pipeline started")
+
+            # Start a thread to pull frames from appsink
+            puller = threading.Thread(target=self._pull_loop, daemon=True, name="puller")
+            puller.start()
             return True
 
         except Exception as e:
             logger.error("Failed to start pipeline: %s", traceback.format_exc())
             return False
 
+    def _pull_loop(self):
+        """Continuously pull frames from appsink."""
+        import gi
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+
+        logger.info("Pull loop started")
+        while self._running:
+            try:
+                sample = self._appsink.emit("pull-sample")
+                if sample is None:
+                    continue
+
+                buf = sample.get_buffer()
+                buf_size = buf.get_size()
+                is_key = buf_size > 5000
+
+                try:
+                    success, data = buf.extract_dup(0, buf_size)
+                except ValueError:
+                    data = buf.extract_dup(0, buf_size)
+                    success = True if data else False
+                if not success or not data:
+                    continue
+
+                if not hasattr(self, '_pull_logged'):
+                    self._pull_logged = True
+                    logger.info("First pulled frame: %d bytes", len(data))
+
+                drop = self._frame_queue.full()
+                if drop and not is_key:
+                    continue
+
+                if is_key:
+                    while not self._frame_queue.empty():
+                        try:
+                            self._frame_queue.get_nowait()
+                        except queue.Empty:
+                            break
+
+                frame = proto.make_video_frame(data, is_keyframe=is_key, is_config=False, drop=drop)
+                try:
+                    self._frame_queue.put(frame, block=False)
+                except queue.Full:
+                    pass
+            except Exception as e:
+                logger.error("Pull loop error: %s", e)
+                time.sleep(0.1)
+
     def _on_new_sample(self, sink):
         """Callback when GStreamer appsink has a new encoded frame."""
+        if not hasattr(self, '_callback_count'):
+            self._callback_count = 0
+        self._callback_count += 1
+        if self._callback_count <= 3 or self._callback_count % 100 == 0:
+            logger.info("on_new_sample called #%d", self._callback_count)
         try:
             sample = sink.emit("pull-sample")
             if sample is None:
@@ -164,20 +231,35 @@ class Session:
                 logger.info("First encoded frame received from pipeline")
 
             buf = sample.get_buffer()
-            # Get buffer flags
-            flags = buf.get_flags()
-            from gi.repository import Gst  # noqa
-            is_key = bool(flags & Gst.BufferFlags.MARKER_DISCONT)
-            is_config = bool(flags & Gst.BufferFlags.HEADER)
+            # Detect keyframe: large buffers are typically keyframes in VP9/VP8
+            # For H.264, SPS/PPS NALs start with 0x67/0x68/0x65
+            buf_size = buf.get_size()
+            is_key = buf_size > 5000  # Heuristic: keyframes are much larger
+            is_config = False
 
-            # Extract data
-            success, data = buf.extract_dup(0, buf.get_size())
-            if not success:
+            # Extract data — GStreamer versions vary in return type
+            try:
+                success, data = buf.extract_dup(0, buf.get_size())
+            except ValueError:
+                # Some versions return just the data
+                data = buf.extract_dup(0, buf.get_size())
+                success = True if data else False
+            if not success or not data:
+                if not hasattr(self, '_extract_logged'):
+                    self._extract_logged = True
+                    logger.warning("extract_dup failed, buf size=%d", buf.get_size())
                 return False
+            if not hasattr(self, '_size_logged'):
+                self._size_logged = True
+                logger.info("First frame extracted: %d bytes, key=%s config=%s",
+                           len(data), is_key, is_config)
 
             # Check if we need to drop due to queue full
             drop = self._frame_queue.full()
             if drop and not is_key:
+                if not hasattr(self, '_drop_logged'):
+                    self._drop_logged = True
+                    logger.warning("Frame queue full, dropping non-keyframes")
                 return True  # Drop non-keyframe
 
             # If keyframe and queue full, clear queue
@@ -191,25 +273,58 @@ class Session:
             frame = proto.make_video_frame(data, is_keyframe=is_key, is_config=is_config, drop=drop)
             try:
                 self._frame_queue.put(frame, block=False)
+                if not hasattr(self, '_queue_logged'):
+                    self._queue_logged = True
+                    logger.info("First frame queued, queue size=%d", self._frame_queue.qsize())
             except queue.Full:
-                pass  # Drop frame
+                if not hasattr(self, '_drop_logged'):
+                    self._drop_logged = True
+                    logger.warning("Queue full, dropping frame")
 
             return True
 
         except Exception as e:
-            logger.debug("Sample callback error: %s", e)
+            logger.error("Sample callback error: %s", e, exc_info=True)
             return False
+
+    def _keepalive_loop(self):
+        """Send periodic pings until the first video frame is sent."""
+        ping_id = 0
+        while self._running and not hasattr(self, '_first_frame_sent'):
+            try:
+                self._send_control({"type": "ping", "id": ping_id})
+                ping_id += 1
+            except Exception:
+                break
+            # Wait 5 seconds, but check frequently for shutdown
+            for _ in range(50):
+                if not self._running or hasattr(self, '_first_frame_sent'):
+                    return
+                time.sleep(0.1)
 
     def _writer_loop(self):
         """Thread that sends queued frames to the socket."""
+        sent_count = 0
+        logger.info("Writer thread started, queue size=%d", self._frame_queue.qsize())
         while self._running:
             try:
-                frame = self._frame_queue.get(timeout=1.0)
+                frame = self._frame_queue.get(timeout=2.0)
                 self._sock.sendall(frame)
+                sent_count += 1
+                if sent_count <= 3 or sent_count % 60 == 0:
+                    logger.info("Sent frame %d (%d bytes)", sent_count, len(frame))
+                if not hasattr(self, '_first_frame_sent'):
+                    self._first_frame_sent = True
+                    logger.info("First video frame sent to device")
             except queue.Empty:
+                logger.debug("Writer: queue empty, size=%d", self._frame_queue.qsize())
                 continue
             except (ConnectionError, BrokenPipeError, OSError) as e:
                 logger.info("Writer socket error: %s", e)
+                self._running = False
+                break
+            except Exception as e:
+                logger.error("Writer unexpected error: %s", e)
                 self._running = False
                 break
 

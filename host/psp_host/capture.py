@@ -230,29 +230,20 @@ def _build_x11_source(args):
 
 
 def _build_wayland_source(args):
-    """Build Wayland capture source via Mutter ScreenCast.
+    """Build capture source on Wayland.
 
-    Creates a virtual extended-display monitor through GNOME Shell's
-    native ``org.gnome.Mutter.ScreenCast`` D-Bus API and streams it
-    via PipeWire.  This bypasses the broken xdg-desktop-portal screencast
-    dialog which hangs for headless apps.
+    Uses XWayland's ``ximagesrc`` to capture the primary display.
+    On GNOME Wayland, XWayland provides an X11 display (usually ``:0``)
+    that mirrors the primary monitor.  ``videoscale`` in the pipeline
+    handles the resolution difference between the laptop screen and the
+    stream target.
+
+    TODO: For true extended-display mode, install ``xvfb`` and use a
+    virtual X11 framebuffer instead of mirroring the primary display.
     """
-    # Check if pipewiresrc is available
-    if not _check_element("pipewiresrc"):
-        logger.warning(
-            "pipewiresrc not found. Install: sudo apt install gstreamer1.0-pipewire\n"
-            "Falling back to X11 capture (may not work on Wayland)."
-        )
-        return _build_x11_source(args)
-
-    logger.info("Using Wayland capture via Mutter ScreenCast (virtual display)")
-
-    from . import wportal
-    node_id = wportal.create_virtual_display(args.width, args.height)
-
-    src = f"pipewiresrc target-object={node_id} do-timestamp=true"
-    logger.info("Wayland source: %s", src)
-    return src
+    display = args.display or os.environ.get("DISPLAY", ":0")
+    logger.info("Using XWayland capture on display %s (mirrors primary screen)", display)
+    return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
 
 
 def _get_output_geometry(output_name):

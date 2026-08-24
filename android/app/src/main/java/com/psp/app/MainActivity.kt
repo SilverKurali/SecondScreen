@@ -330,7 +330,7 @@ class MainActivity : AppCompatActivity() {
             height = currentSettings.height,
             fps = currentSettings.fps,
             bitrateKbps = bitrateKbps,
-            codec = "h264"
+            codec = "vp9"
         )
 
         connectOverlay.visibility = View.GONE
