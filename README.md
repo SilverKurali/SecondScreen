@@ -1,4 +1,8 @@
-# PSP (Portable Screen Project) — Android 扩展屏
+# SecondScreen — Android 扩展屏
+
+[![Python CI](https://github.com/SecondScreen/actions/workflows/python-ci.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/python-ci.yml)
+[![Android CI](https://github.com/SecondScreen/actions/workflows/android-ci.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/android-ci.yml)
+[![ShellCheck](https://github.com/SecondScreen/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/shellcheck.yml)
 
 将 ARM Android 设备（平板、手机、智慧屏）作为电脑的扩展屏幕使用，支持 **有线 (ADB USB)** 和 **局域网 WiFi** 连接。
 

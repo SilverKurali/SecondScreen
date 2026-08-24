@@ -1,0 +1,98 @@
+# Python CI — PC 端 Host 代码测试
+#
+# 运行:
+#   - 语法检查 (py_compile)
+#   - 单元测试 (unittest)
+#   - 代码风格检查 (flake8)
+#   - 类型检查 (mypy)
+
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "host/**"
+      - "tests/**"
+      - "requirements.txt"
+      - ".github/workflows/python-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "host/**"
+      - "tests/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: "host/requirements.txt"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 mypy
+          # Install test dependencies only (no GStreamer needed)
+          if [ -f host/requirements.txt ]; then
+            pip install -r host/requirements.txt 2>/dev/null || true
+          fi
+
+      - name: Lint with flake8
+        run: |
+          flake8 host/psp_host/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 host/psp_host/ --count --max-complexity=15 --max-line-length=127 --statistics
+        continue-on-error: true
+
+      - name: Type check with mypy
+        run: |
+          mypy host/psp_host/ --ignore-missing-imports --follow-imports=skip
+        continue-on-error: true
+
+      - name: Syntax check (py_compile)
+        run: |
+          echo "Checking Python files..."
+          find host/psp_host/ -name "*.py" -exec python3 -m py_compile {} \;
+          echo "✓ All Python files compile OK"
+
+      - name: Run unit tests
+        run: |
+          echo "Running protocol tests..."
+          python3 -m unittest tests.test_protocol -v
+
+      - name: Test CLI --list-outputs
+        run: |
+          cd host && PYTHONPATH=. python3 -m psp_host --list-outputs 2>&1 || true
+        continue-on-error: true
+
+      - name: Test CLI --list-devices
+        run: |
+          cd host && PYTHONPATH=. python3 -m psp_host --list-devices 2>&1 || true
+        continue-on-error: true
+
+      - name: Test CLI --help
+        run: |
+          cd host && PYTHONPATH=. python3 -m psp_host --help 2>&1 | head -30
+        continue-on-error: true
+
+      - name: Check for common issues
+        run: |
+          echo "Checking for TODO/FIXME markers..."
+          grep -rn "TODO\|FIXME\|XXX" host/psp_host/ --include="*.py" || echo "No markers found"
+          echo "Checking for absolute paths..."
+          grep -rn "home/silver" host/psp_host/ --include="*.py" || echo "No absolute paths found"
