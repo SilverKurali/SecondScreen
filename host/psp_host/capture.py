@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 ENCODER_PRIORITY = [
     # H.264: best latency/quality
     ("x264enc", "h264", "x264enc", {
-        "speed-preset": "ultrafast",
+        "speed-preset": "veryfast",
         "tune": "zerolatency",
         "byte-stream": "true",
         "bframes": "0",
@@ -161,9 +161,9 @@ def build_pipeline(args):
     # For VP8/VP9/Theora, replace h264parse with appropriate parser
     if codec in ("vp8", "vp9"):
         # VP8/VP9 frames are self-contained, no parser needed
-        pipeline_str = pipeline_str.replace("! h264parse config-interval=-1 ! ", "! ")
+        pipeline_str = pipeline_str.replace('! h264parse config-interval=-1 ! capsfilter caps="video/x-h264,alignment=au,stream-format=byte-stream" ! ', "! ")
     elif codec == "theora":
-        pipeline_str = pipeline_str.replace("! h264parse config-interval=-1 ! ", "! ")
+        pipeline_str = pipeline_str.replace('! h264parse config-interval=-1 ! capsfilter caps="video/x-h264,alignment=au,stream-format=byte-stream" ! ', "! ")
 
     logger.debug("Pipeline: %s", pipeline_str)
     return codec, pipeline_str, "psp_sink"
