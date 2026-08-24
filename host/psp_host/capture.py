@@ -155,3 +155,11 @@ def negotiate(want, have):
         "display_mode": want.get("display_mode", 0),
         "use_hardware_encoder": want.get("use_hardware_encoder", False),
     }
+
+def get_encoder_info():
+    """Return info about available encoders."""
+    info = []
+    for name, codec, element, _ in ENCODER_PRIORITY:
+        available = _check_element(element)
+        info.append((name, codec, element, available))
+    return info

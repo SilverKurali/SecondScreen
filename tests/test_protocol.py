@@ -101,12 +101,12 @@ class TestNegotiation(unittest.TestCase):
         self.assertEqual(response["bitrate_kbps"], 10000)
 
     def test_unsupported_codec(self):
-        """Test unsupported codec causes rejection."""
+        """Test unsupported codec falls back to h264."""
         want = {"codec": "h265", "width": 1920, "height": 1080, "fps": 60}
         have = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
         ok, response = proto.negotiate(want, have)
-        self.assertFalse(ok)
-        self.assertIn("Unsupported codec", response["reason"])
+        self.assertTrue(ok)
+        self.assertEqual(response["codec"], "h264")
 
     def test_resolution_too_small(self):
         """Test too-small resolution is rejected."""
@@ -117,12 +117,12 @@ class TestNegotiation(unittest.TestCase):
         self.assertIn("Resolution too small", response["reason"])
 
     def test_vp9_codec(self):
-        """Test VP9 is accepted."""
+        """Test VP9 falls back to h264."""
         want = {"codec": "vp9", "width": 1280, "height": 720, "fps": 60}
         have = {"codec": "vp9", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
         ok, response = proto.negotiate(want, have)
         self.assertTrue(ok)
-        self.assertEqual(response["codec"], "vp9")
+        self.assertEqual(response["codec"], "h264")
 
 
 class TestFrameReader(unittest.TestCase):
