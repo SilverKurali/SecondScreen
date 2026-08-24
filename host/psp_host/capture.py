@@ -232,10 +232,38 @@ def _build_x11_source(args):
 def _build_wayland_source(args):
     """Build capture source on Wayland.
 
-    Uses Xvfb virtual display or XWayland to capture screen content.
+    On Wayland, capture goes through XWayland (DISPLAY=:0 typically).
+    If an EVDI virtual display is active, GNOME adds it as a real monitor
+    and XWayland sees the combined desktop. We capture via ximagesrc.
     """
     display = args.display or os.environ.get("DISPLAY", ":0")
-    logger.info("Capturing from display %s", display)
+    logger.info("Capturing from Wayland display %s", display)
+
+    if args.region:
+        try:
+            parts = args.region.replace("x", ",").split(",")
+            sx, sy, sw, sh = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+            return (
+                f"ximagesrc display-name={display} "
+                f"startx={sx} starty={sy} "
+                f"endx={sx + sw} endy={sy + sh} "
+                f"use-damage=false show-pointer=false"
+            )
+        except (ValueError, IndexError):
+            pass
+
+    if args.output:
+        geo = _get_output_geometry(args.output)
+        if geo:
+            sx, sy, sw, sh = geo
+            logger.info("EVDI output '%s' geometry: %d,%d %dx%d", args.output, sx, sy, sw, sh)
+            return (
+                f"ximagesrc display-name={display} "
+                f"startx={sx} starty={sy} "
+                f"endx={sx + sw} endy={sy + sh} "
+                f"use-damage=false show-pointer=false"
+            )
+
     return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
 
 

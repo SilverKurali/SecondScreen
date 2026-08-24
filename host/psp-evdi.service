@@ -1,0 +1,11 @@
+[Unit]
+Description=Load EVDI kernel module for PSP virtual display
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/modprobe evdi
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

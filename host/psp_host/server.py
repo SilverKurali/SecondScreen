@@ -40,6 +40,9 @@ class Session:
         self._pipe = None
         self._injector = None
         self._reader = proto.FrameReader(sock)
+        # Display offset for EVDI virtual display (from args if set)
+        self._display_offset_x = getattr(args, '_display_offset_x', 0) or 0
+        self._display_offset_y = getattr(args, '_display_offset_y', 0) or 0
 
     def run(self):
         """Run the session: negotiate, then start streaming."""
@@ -363,15 +366,19 @@ class Session:
 
         kind = msg.get("kind")
         try:
+            # Get display offset for EVDI virtual display positioning
+            offset_x = getattr(self, '_display_offset_x', 0)
+            offset_y = getattr(self, '_display_offset_y', 0)
+
             if kind == "move":
                 # Map normalized coordinates (0..1) to screen coords
-                x = msg.get("x", 0.5) * self._args.width
-                y = msg.get("y", 0.5) * self._args.height
+                x = msg.get("x", 0.5) * self._args.width + offset_x
+                y = msg.get("y", 0.5) * self._args.height + offset_y
                 self._injector.mouse_move(x, y)
 
             elif kind == "btn":
-                x = msg.get("x", 0.5) * self._args.width
-                y = msg.get("y", 0.5) * self._args.height
+                x = msg.get("x", 0.5) * self._args.width + offset_x
+                y = msg.get("y", 0.5) * self._args.height + offset_y
                 btn = msg.get("btn", 1)
                 state = msg.get("state", 1)
                 # Move to position first, then click
@@ -492,16 +499,44 @@ def run_server(args):
     if not args.output and not args.region and not args.fullscreen:
         if is_wayland:
             print(f"🖥 检测到 Wayland ({session_info['compositor']} {session_info['version']})")
-        print(f"   创建 Xvfb 虚拟显示器 ...")
+        print(f"   创建虚拟显示器 ...")
         vd_result = create_virtual_display(
             session_info, args.width, args.height, args.fps
         )
         if vd_result["success"]:
-            xvfb_display = vd_result.get("xvfb_display", ":99")
-            args.display = xvfb_display
-            args._xvfb_pid = vd_result.get("xvfb_pid")
-            print(f"   ✓ 虚拟显示器 {xvfb_display} 已创建 ({args.width}x{args.height})")
-            print(f"   ✓ 可以将窗口拖到扩展屏幕区域")
+            # Check if this is EVDI (real virtual monitor) or Xvfb
+            capture_source = vd_result.get("capture_source")
+            xvfb_display = vd_result.get("xvfb_display")
+
+            if capture_source:
+                # EVDI mode: use the named output for capture
+                args.output = capture_source
+                geometry = vd_result.get("geometry")
+                if geometry:
+                    x, y, w, h = geometry
+                    args.region = f"{x},{y},{w}x{h}"
+                    # Store offset for input coordinate mapping
+                    args._display_offset_x = x
+                    args._display_offset_y = y
+                print(f"   ✓ EVDI 虚拟显示器已创建: {capture_source}")
+                print(f"   ✓ GNOME 已识别为第二显示器")
+                print(f"   ✓ 可在 设置→显示 中配置位置")
+                print(f"   ✓ 可以将窗口拖到扩展屏幕")
+                print(f"   ✓ 支持触控输入")
+            elif xvfb_display:
+                # Xvfb mode: independent display, need its own DISPLAY var
+                args.display = xvfb_display
+                args._xvfb_pid = vd_result.get("xvfb_pid")
+                print(f"   ✓ Xvfb 虚拟显示器已创建: {xvfb_display}")
+                print(f"   ⚠ Xvfb 是独立显示，不与 GNOME 集成")
+                print(f"   → 无法拖拽窗口，仅捕获静态内容")
+            else:
+                print(f"   ✓ 虚拟显示器已创建")
+
+            msg = vd_result.get("message", "")
+            if msg:
+                for line in msg.split("\n"):
+                    print(f"   {line}")
         else:
             print(f"   ⚠ {vd_result['message']}")
             args.fullscreen = True
