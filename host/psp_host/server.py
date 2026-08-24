@@ -488,47 +488,24 @@ def run_server(args):
     session_info = detect_session()
     is_wayland = session_info["is_wayland"]
 
-    # If no output/region specified and running Wayland, try to create virtual display
+    # Create virtual display if no output/region/fullscreen specified
     if not args.output and not args.region and not args.fullscreen:
         if is_wayland:
             print(f"🖥 检测到 Wayland ({session_info['compositor']} {session_info['version']})")
-            print(f"   尝试创建虚拟显示器 ...")
-            vd_result = create_virtual_display(
-                session_info, args.width, args.height, args.fps
-            )
-            if vd_result["success"]:
-                args.output = vd_result["name"]
-                print(f"   ✓ 虚拟显示器 {vd_result['name']} 已创建")
-                if vd_result["geometry"]:
-                    x, y, w, h = vd_result["geometry"]
-                    region = f"{x},{y},{w}x{h}"
-                    args.region = region
-                    print(f"   ✓ 捕获区域: {region}")
-            else:
-                print(f"   ⚠ {vd_result['message']}")
-                # Fall back to region mode
-                region = suggest_region_for_extend(args.width, args.height)
-                args.region = region
-                args.fullscreen = False
-                print(f"   → 回退到区域捕获模式: --region {region}")
-                print(f"     将捕获主屏幕右侧区域作为扩展屏幕")
-                if is_wayland:
-                    print(f"   → 注意: 需要安装 ydootol 实现输入注入:")
-                    print(f"     sudo apt install ydootol")
-                    print(f"     sudo usermod -aG input $USER && reboot")
+        print(f"   创建 Xvfb 虚拟显示器 ...")
+        vd_result = create_virtual_display(
+            session_info, args.width, args.height, args.fps
+        )
+        if vd_result["success"]:
+            xvfb_display = vd_result.get("xvfb_display", ":99")
+            args.display = xvfb_display
+            args._xvfb_pid = vd_result.get("xvfb_pid")
+            print(f"   ✓ 虚拟显示器 {xvfb_display} 已创建 ({args.width}x{args.height})")
+            print(f"   ✓ 可以将窗口拖到扩展屏幕区域")
         else:
-            # X11: try virtual display
-            vd_result = create_virtual_display(
-                session_info, args.width, args.height, args.fps
-            )
-            if vd_result["success"]:
-                args.output = vd_result["name"]
-                print(f"   ✓ 虚拟显示器 {vd_result['name']} 已创建")
-            else:
-                print(f"   ⚠ {vd_result['message']}")
-                region = suggest_region_for_extend(args.width, args.height)
-                args.region = region
-                print(f"   → 回退到区域捕获模式: --region {region}")
+            print(f"   ⚠ {vd_result['message']}")
+            args.fullscreen = True
+            print(f"   → 回退到主屏幕捕获模式")
 
     # Start discovery (UDP broadcast + ADB monitor)
     from .discovery import DiscoveryServer

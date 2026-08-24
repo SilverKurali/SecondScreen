@@ -232,17 +232,10 @@ def _build_x11_source(args):
 def _build_wayland_source(args):
     """Build capture source on Wayland.
 
-    Uses XWayland's ``ximagesrc`` to capture the primary display.
-    On GNOME Wayland, XWayland provides an X11 display (usually ``:0``)
-    that mirrors the primary monitor.  ``videoscale`` in the pipeline
-    handles the resolution difference between the laptop screen and the
-    stream target.
-
-    TODO: For true extended-display mode, install ``xvfb`` and use a
-    virtual X11 framebuffer instead of mirroring the primary display.
+    Uses Xvfb virtual display or XWayland to capture screen content.
     """
     display = args.display or os.environ.get("DISPLAY", ":0")
-    logger.info("Using XWayland capture on display %s (mirrors primary screen)", display)
+    logger.info("Capturing from display %s", display)
     return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
 
 

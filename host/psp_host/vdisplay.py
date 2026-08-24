@@ -288,76 +288,61 @@ def _create_virtual_hyprland(width, height, rate, name=None):
 
 
 def _create_virtual_gnome(width, height, rate, name=None):
-    """Attempt to create a virtual monitor on GNOME.
+    """Create a virtual display on GNOME using Xvfb.
 
-    GNOME does not have a stable public API for headless monitors.
-    This attempts several workarounds.
+    Xvfb creates a virtual X11 framebuffer that acts as a real display.
+    On GNOME Wayland, this gives us a capturable display via ximagesrc.
     """
     result = {"success": False, "name": "", "geometry": None, "fallback": False, "message": ""}
 
-    # Method 1: Try gnome-monitor-config if available
-    try:
-        if subprocess.run(["which", "gnome-monitor-config"], capture_output=True).returncode == 0:
-            cmd = [
-                "gnome-monitor-config", "set",
-                "-M", "logical",
-                "-p", f"{width}x{height}@{rate}",
-                "-m", f"{width}x{height}@{rate}",
-            ]
-            subprocess.run(cmd, capture_output=True, timeout=10)
-            time.sleep(1)
-            result["success"] = True
-            result["name"] = "virtual"
-            result["geometry"] = (0, 0, width, height)
-            result["message"] = "Created via gnome-monitor-config (experimental)"
-            result["fallback"] = True
-            return result
-    except Exception:
-        pass
-
-    # Method 2: Try to use the D-Bus ApplyMonitorsConfig to add a virtual monitor
-    # This is experimental and may not work on all GNOME versions
-    try:
-        # Get current state
-        state = subprocess.run(
-            ["gdbus", "call", "--session",
-             "--dest", "org.gnome.Mutter.DisplayConfig",
-             "--object-path", "/org/gnome/Mutter/DisplayConfig",
-             "--method", "org.gnome.Mutter.DisplayConfig.GetCurrentState"],
-            capture_output=True, text=True, timeout=5,
-        )
-        # Parse serial from state
-        # The state format is (uint32 serial, ...)
-        serial_match = re.search(r"uint32 (\d+)", state.stdout)
-        if serial_match:
-            serial = int(serial_match.group(1))
-            logger.info("GNOME DisplayConfig serial: %d", serial)
-
-            # Try to enable experimental virtual monitor feature
+    # Method 1: Use Xvfb (most reliable)
+    if subprocess.run(["which", "Xvfb"], capture_output=True).returncode == 0:
+        display_name = name or "psp_virtual"
+        # Find a free display number
+        for num in range(100, 200):
+            display_num = f":{num}"
+            # Check if display is already in use
+            if os.path.exists(f"/tmp/.X11-unix/X{num}"):
+                continue
             try:
-                subprocess.run(
-                    ["gsettings", "set", "org.gnome.mutter", "experimental-features",
-                     "['scale-monitor-framebuffer', 'virtual-monitor']"],
-                    capture_output=True, timeout=5,
+                cmd = [
+                    "Xvfb", display_num,
+                    "-screen", "0", f"{width}x{height}x24",
+                    "-nolisten", "tcp",
+                    "-ac",
+                ]
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
-                logger.info("Enabled virtual-monitor experimental feature")
-                time.sleep(1)
-            except Exception:
-                pass
+                time.sleep(0.5)
+                if proc.poll() is None:
+                    # Xvfb is running
+                    result["success"] = True
+                    result["name"] = display_name
+                    result["geometry"] = (0, 0, width, height)
+                    result["message"] = f"Xvfb virtual display on {display_num} ({width}x{height})"
+                    logger.info("Xvfb started on %s: PID %d", display_num, proc.pid)
+                    # Store PID for cleanup
+                    result["xvfb_pid"] = proc.pid
+                    result["xvfb_display"] = display_num
+                    return result
+                else:
+                    # Xvfb failed to start, try next number
+                    continue
+            except Exception as e:
+                logger.warning("Xvfb failed on %s: %s", display_num, e)
+                continue
 
-        result["message"] = (
-            "GNOME does not support virtual monitors natively.\n"
-            "  Options:\n"
-            "  1. Use --region mode to capture a portion of your screen\n"
-            "  2. Install gnome-monitor-config (github.com/udifuchs/gnome-monitor-config)\n"
-            "  3. Switch to Sway/Hyprland for native headless output support\n"
-            "  4. Use X11 with VirtualHeads"
-        )
+        result["message"] = "Xvfb installed but failed to start on any display number"
         result["fallback"] = True
-    except Exception as e:
-        result["message"] = f"GNOME error: {e}"
-        result["fallback"] = True
+        return result
 
+    # Method 2: Fallback message
+    result["message"] = (
+        "Xvfb not found. Install with: sudo apt install xvfb\n"
+        "Then restart the host."
+    )
+    result["fallback"] = True
     return result
 
 
