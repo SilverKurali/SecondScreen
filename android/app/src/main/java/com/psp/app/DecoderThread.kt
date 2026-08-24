@@ -86,8 +86,8 @@ class DecoderThread(
             if (!initCodec()) return
 
             while (running) {
-                val frame = frameQueue.poll() ?: run {
-                    // No frame available, wait a bit
+                val frame = frameQueue.poll()
+                if (frame == null) {
                     Thread.sleep(1)
                     continue
                 }

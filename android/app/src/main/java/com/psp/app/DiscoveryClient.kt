@@ -154,7 +154,7 @@ class DiscoveryClient(
                 put("type", "psp_discover")
                 put("device", android.os.Build.MODEL)
             }
-            val data = msg.toString().encodeToByteArray(Charsets.UTF_8)
+            val data = msg.toString().toByteArray(Charsets.UTF_8)
 
             // Broadcast to LAN
             val broadcastAddr = InetAddress.getByName("255.255.255.255")

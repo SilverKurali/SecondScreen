@@ -78,7 +78,7 @@ class InputSender(private val outputStream: OutputStream) {
 
     private fun sendControl(msg: JSONObject) {
         try {
-            val payload = msg.toString().encodeToByteArray(Charsets.UTF_8)
+            val payload = msg.toString().toByteArray(Charsets.UTF_8)
             val bodyLen = 1 + payload.size  // 1 byte flags + payload
             if (4 + bodyLen > sendBuffer.size) {
                 sendBuffer = ByteArray(4 + bodyLen + 1024)

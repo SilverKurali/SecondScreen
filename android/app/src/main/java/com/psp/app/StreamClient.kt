@@ -220,7 +220,7 @@ class StreamClient(
 
     private fun sendControlFrame(json: JSONObject) {
         try {
-            val payload = json.toString().encodeToByteArray(Charsets.UTF_8)
+            val payload = json.toString().toByteArray(Charsets.UTF_8)
             val bodyLen = 1 + payload.size
             val buf = ByteBuffer.allocate(4 + bodyLen).order(ByteOrder.LITTLE_ENDIAN)
             buf.putInt(bodyLen)
