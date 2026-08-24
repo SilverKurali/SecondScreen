@@ -1,160 +1,299 @@
-"""PSP protocol: frame packing/unpacking and session negotiation."""
+"""GStreamer pipeline construction for screen capture and encoding."""
 
-import json
-import struct as _struct
-import uuid as _uuid
+import logging
+import os
+import platform
+import subprocess
+import sys
 
-# Frame flags
-FLAG_KEYFRAME = 0x01
-FLAG_CONFIG = 0x02
-FLAG_DROP = 0x04
-FLAG_CONTROL = 0x80
+from .config import RESOLUTIONS
 
-# Frame header: 4 bytes LE length + 1 byte flags
-HEADER_FMT = "<I"
-HEADER_SIZE = 4  # length field (excludes itself, includes flags byte)
-PACKET_HEADER_SIZE = HEADER_SIZE + 1  # total header = length + flags
+logger = logging.getLogger(__name__)
+
+# Priority-ordered encoder list: (name, codec_str, gst_element_name, properties_dict)
+ENCODER_PRIORITY = [
+    # H.264: best latency/quality
+    ("x264enc", "h264", "x264enc", {
+        "speed-preset": "ultrafast",
+        "tune": "zerolatency",
+        "byte-stream": "true",
+        "bframes": "0",
+        "key-int-max": "300",
+    }),
+    ("nvenc", "h264", "nvh264enc", {
+        "preset": "low-latency-hq",
+        "rc-mode": "cbr",
+        "bframes": "0",
+    }),
+    ("vaapih264enc", "h264", "vaapih264enc", {
+        "tune": "low-latency",
+        "rate-control": "cbr",
+        "bframes": "0",
+        "keyframe-period": "300",
+    }),
+    # VP9: good quality, slower
+    ("vp9enc", "vp9", "vp9enc", {
+        "cpu-used": "8",
+        "deadline": "1",
+        "lag-in-frames": "0",
+        "static-threshold": "0",
+        "min-quantizer": "30",
+        "max-quantizer": "50",
+    }),
+    # VP8: fast, decent quality
+    ("vp8enc", "vp8", "vp8enc", {
+        "cpu-used": "8",
+        "deadline": "1",
+        "lag-in-frames": "0",
+        "static-threshold": "0",
+        "min-quantizer": "30",
+        "max-quantizer": "50",
+    }),
+    # Theora: last resort
+    ("theoraenc", "theora", "theoraenc", {
+        "quality": "48",
+        "keyframe-force": "300",
+    }),
+]
 
 
-def make_frame(flags, payload):
-    """Pack a binary frame: [u32le len(flags+payload)][u8 flags][payload].
+def _check_element(name):
+    """Check if a GStreamer element is available."""
+    try:
+        result = subprocess.run(
+            ["gst-inspect-1.0", name],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
-    Returns:
-        bytes: Complete frame ready to send.
-    """
-    body = bytes([flags]) + payload
-    header = _struct.pack(HEADER_FMT, len(body))
-    return header + body
 
-
-def make_control_frame(obj):
-    """Pack a JSON control frame.
+def detect_encoder(preferred_codec=None, prefer_hardware=False):
+    """Detect the best available encoder.
 
     Args:
-        obj: JSON-serializable dict.
+        preferred_codec: Optional 'h264', 'vp9', 'vp8', or None for auto.
+        prefer_hardware: If True, prefer hardware encoders (nvh264enc).
 
     Returns:
-        bytes: Complete frame with FLAG_CONTROL set.
+        (codec_str, gst_element_name, properties_dict) or raises RuntimeError.
     """
-    payload = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-    return make_frame(FLAG_CONTROL, payload)
+    candidates = list(ENCODER_PRIORITY)
+    if prefer_hardware:
+        hw = [e for e in candidates if e[0] == "nvenc"]
+        sw = [e for e in candidates if e[0] != "nvenc"]
+        candidates = hw + sw
+    if preferred_codec and preferred_codec != "auto":
+        candidates = [e for e in candidates if e[1] == preferred_codec]
+        if not candidates:
+            raise RuntimeError(f"Preferred codec '{preferred_codec}' not in encoder list")
+
+    for name, codec, element, props in candidates:
+        if _check_element(element):
+            logger.info("Using encoder: %s (%s)", element, codec)
+            return codec, element, props
+
+    raise RuntimeError(
+        "No video encoder found! Install gstreamer1.0-plugins-ugly (for x264enc) "
+        "or gstreamer1.0-plugins-bad/vpx for VP8/VP9.\n"
+        "  sudo apt install gstreamer1.0-plugins-ugly gstreamer1.0-libav"
+    )
 
 
-def make_video_frame(encoded_data, is_keyframe=False, is_config=False, drop=False):
-    """Pack a video frame.
+def build_pipeline(args):
+    """Build a GStreamer pipeline for screen capture and encoding.
 
     Args:
-        encoded_data: H.264/VP9/VP8 access unit bytes (Annex-B).
-        is_keyframe: True if IDR frame.
-        is_config: True if contains SPS/PPS etc.
-        drop: Hint that this frame can be dropped.
+        args: Parsed command-line arguments (from config.parse_args).
 
     Returns:
-        bytes: Complete frame.
+        (codec, pipeline_string, appsink_name) where codec is 'h264'/'vp9'/etc.
     """
-    flags = 0
-    if is_keyframe:
-        flags |= FLAG_KEYFRAME
-    if is_config:
-        flags |= FLAG_CONFIG
-    if drop:
-        flags |= FLAG_DROP
-    return make_frame(flags, encoded_data)
+    import gi  # noqa: F811
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst  # noqa: F402
+
+    Gst.init(None)
+
+    # Detect encoder
+    prefer_hw = getattr(args, '_use_hardware_encoder', False)
+    codec, encoder_name, enc_props = detect_encoder(args.codec, prefer_hardware=prefer_hw)
+
+    # Determine capture source and region
+    src_str = _build_source(args)
+
+    # Bitrate string
+    bitrate_kbps = args.bitrate_kbps
+
+    # Build encoder properties string
+    enc_props_str = " ".join(f"{k}={v}" for k, v in enc_props.items())
+    # Add bitrate (encoder-specific naming)
+    bitrate_prop = ""
+    if encoder_name == "x264enc":
+        # x264enc uses bitrate= in kbps for encoding, but "vbv-buf-capacity" etc.
+        # Actually x264enc property: "bitrate" is in kbps
+        enc_props_str += f" bitrate={bitrate_kbps}"
+        # Add vbv buffer size for CBR-like behavior
+        enc_props_str += f" vbv-buf-capacity={bitrate_kbps}"
+    elif encoder_name in ("nvh264enc", "vaapih264enc"):
+        # These use "bitrate" in kbps
+        enc_props_str += f" bitrate={bitrate_kbps}"
+    elif encoder_name in ("vp9enc", "vp8enc"):
+        # vpx encoders use "target-bitrate" in kbps, "end-usage=cbr"
+        enc_props_str += f" target-bitrate={bitrate_kbps} end-usage=cbr"
+    elif encoder_name == "theoraenc":
+        pass  # quality-based, no bitrate setting
+
+    # The pipeline — use I420 which is compatible with all encoders
+    capsfilter = f"video/x-raw,format=I420,width={args.width},height={args.height},framerate={args.fps}/1"
+    pipeline_str = (
+        f"{src_str} ! "
+        f"videoconvert ! "
+        f"videoscale ! "
+        f"videorate ! "
+        f"capsfilter caps=\"{capsfilter}\" ! "
+        f"{encoder_name} {enc_props_str} ! "
+        f"h264parse config-interval=-1 ! "
+        f"appsink name=psp_sink max-buffers=1 drop=true sync=false emit-signals=true"
+    )
+
+    # For VP8/VP9/Theora, replace h264parse with appropriate parser
+    if codec in ("vp8", "vp9"):
+        # VP8/VP9 frames are self-contained, no parser needed
+        pipeline_str = pipeline_str.replace("! h264parse config-interval=-1 ! ", "! ")
+    elif codec == "theora":
+        pipeline_str = pipeline_str.replace("! h264parse config-interval=-1 ! ", "! ")
+
+    logger.debug("Pipeline: %s", pipeline_str)
+    return codec, pipeline_str, "psp_sink"
 
 
-class FrameReader:
-    """Reads framed messages from a stream socket.
+def _is_wayland():
+    """Check if running under Wayland."""
+    return (
+        os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        or os.environ.get("WAYLAND_DISPLAY", "")
+    )
 
-    Usage:
-        reader = FrameReader(sock)
-        for (flags, payload) in reader:
-            ...
-    """
 
-    def __init__(self, sock):
-        self._sock = sock
-        self._buf = b""
+def _build_source(args):
+    """Build the capture source pipeline string based on platform."""
+    system = platform.system()
 
-    def recv_exact(self, n):
-        """Read exactly n bytes from socket."""
-        data = b""
-        while len(data) < n:
-            chunk = self._sock.recv(n - len(data))
-            if not chunk:
-                raise ConnectionError("Socket closed")
-            data += chunk
-        return data
+    if system == "Linux":
+        if _is_wayland():
+            return _build_wayland_source(args)
+        else:
+            return _build_x11_source(args)
 
-    def read_frame(self):
-        """Read one frame from socket.
+    elif system == "Windows":
+        # Use DXGI capture on Windows (requires gst-plugins-bad)
+        if args.region:
+            logger.warning("--region on Windows uses DXGI full screen with crop. Not fully implemented.")
+        return (
+            "dxgiscreencapsrc monitor-index=0 ! "
+            "videoconvert"
+        )
+    else:
+        raise RuntimeError(f"Unsupported platform: {system}")
 
-        Returns:
-            (flags, payload) tuple.
 
-        Raises:
-            ConnectionError on disconnect.
-            ValueError on corrupt frame.
-        """
-        header = self.recv_exact(4)
-        body_len = _struct.unpack(HEADER_FMT, header)[0]
-        body = self.recv_exact(body_len)
-        if len(body) < 1:
-            raise ValueError("Empty frame body")
-        flags = body[0]
-        payload = body[1:]
-        return flags, payload
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+def _build_x11_source(args):
+    """Build X11 capture source via ximagesrc."""
+    display = args.display
+    if args.region:
         try:
-            return self.read_frame()
-        except (ConnectionError, ValueError) as e:
-            raise StopIteration from e
+            parts = args.region.replace("x", ",").split(",")
+            sx, sy, sw, sh = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+            return (
+                f"ximagesrc display-name={display} "
+                f"startx={sx} starty={sy} "
+                f"endx={sx + sw} endy={sy + sh} "
+                f"use-damage=false show-pointer=false"
+            )
+        except (ValueError, IndexError):
+            logger.warning("Invalid --region format, using full screen")
+            return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
+    elif args.output:
+        geo = _get_output_geometry(args.output)
+        if geo:
+            sx, sy, sw, sh = geo
+            logger.info("Output '%s' geometry: %d,%d %dx%d", args.output, sx, sy, sw, sh)
+            return (
+                f"ximagesrc display-name={display} "
+                f"startx={sx} starty={sy} "
+                f"endx={sx + sw} endy={sy + sh} "
+                f"use-damage=false show-pointer=false"
+            )
+        else:
+            logger.warning("Could not detect output '%s', falling back to full screen", args.output)
+            return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
+    else:
+        return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
 
 
-def negotiate(want, have):
-    """Validate client's 'want' against host capabilities.
+def _build_wayland_source(args):
+    """Build capture source on Wayland using Mutter ScreenCast + pipewiresrc."""
+    from . import screencast
 
-    Args:
-        want: dict from client hello with 'codec', 'width', 'height', 'fps'.
-        have: dict with 'codec', 'width', 'height', 'fps', 'bitrate_kbps'.
+    node_id = screencast._node_id
+    if node_id is None:
+        logger.info("Creating Mutter ScreenCast session ...")
+        node_id = screencast.create_screencast_session(
+            width=args.width, height=args.height
+        )
+
+    if node_id is not None:
+        src = f"pipewiresrc path={node_id}"
+        logger.info("Using pipewiresrc path=%d", node_id)
+    else:
+        logger.warning("ScreenCast session failed, trying plain pipewiresrc")
+        src = "pipewiresrc"
+
+    return f"{src} ! videoconvert"
+
+
+def _get_output_geometry(output_name):
+    """Parse xrandr output to find the geometry of a named output.
 
     Returns:
-        (ok, response_dict) where ok is bool and response_dict is the
-        welcome message to send.
+        (x, y, width, height) tuple or None.
     """
-    supported_codecs = {"h264", "vp9", "vp8"}
-    # Always prefer h264: x264enc is far faster and higher quality than
-    # software vp9enc, and Android hardware H.264 decoding is universal.
-    codec = "h264"
-    if codec not in supported_codecs:
-        return False, {"type": "welcome", "ok": False, "reason": f"Unsupported codec: {codec}"}
+    try:
+        result = subprocess.run(
+            ["xrandr", "--query"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if output_name in line and " connected" in line:
+                # Parse: "eDP-1 connected primary 1920x1080+0+0 (normal ...)"
+                import re
+                m = re.search(r"(\d+)x(\d+)\+(\d+)\+(\d+)", line)
+                if m:
+                    w, h, x, y = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+                    return x, y, w, h
+        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning("xrandr failed: %s", e)
+        return None
 
-    # Clamp resolution to what host offers
-    w = min(want.get("width", 1920), have["width"])
-    h = min(want.get("height", 1080), have["height"])
-    if w < 640 or h < 480:
-        return False, {"type": "welcome", "ok": False, "reason": "Resolution too small"}
 
-    fps = min(want.get("fps", 60), have["fps"])
-    bitrate = min(want.get("bitrate_kbps", have["bitrate_kbps"]), have["bitrate_kbps"])
+def list_x11_outputs():
+    """List available X11 outputs via xrandr."""
+    try:
+        result = subprocess.run(
+            ["xrandr", "--query"],
+            capture_output=True, text=True, timeout=5,
+        )
+        outputs = []
+        for line in result.stdout.splitlines():
+            if " connected" in line:
+                outputs.append(line.strip())
+        return outputs
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return [f"Error: {e}"]
 
-    return True, {
-        "type": "welcome",
-        "ok": True,
-        "session": str(_uuid.uuid4()),
-        "codec": codec,
-        "width": w,
-        "height": h,
-        "fps": fps,
-        "bitrate_kbps": bitrate,
-        "virtual_display_width": have["width"],
-        "virtual_display_height": have["height"],
-        "display_mode": want.get("display_mode", 0),
-        "use_hardware_encoder": want.get("use_hardware_encoder", False),
-    }
 
 def get_encoder_info():
     """Return info about available encoders."""
