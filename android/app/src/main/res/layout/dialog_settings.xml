@@ -85,6 +85,22 @@
             android:layout_weight="1"
             android:text="120"
             android:textColor="@android:color/white" />
+
+        <RadioButton
+            android:id="@+id/fps144"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="144"
+            android:textColor="@android:color/white" />
+
+        <RadioButton
+            android:id="@+id/fpsUnlimited"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="∞"
+            android:textColor="@android:color/white" />
     </RadioGroup>
 
     <TextView

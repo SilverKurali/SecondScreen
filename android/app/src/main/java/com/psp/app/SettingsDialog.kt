@@ -61,6 +61,8 @@ class SettingsDialog(
         val fpsGroup = view.findViewById<RadioGroup>(R.id.fpsGroup)
         when (currentSettings.fps) {
             120 -> fpsGroup.check(R.id.fps120)
+            144 -> fpsGroup.check(R.id.fps144)
+            0 -> fpsGroup.check(R.id.fpsUnlimited)  // 无限制
             90 -> fpsGroup.check(R.id.fps90)
             else -> fpsGroup.check(R.id.fps60)
         }
@@ -99,6 +101,8 @@ class SettingsDialog(
             // Resolve FPS
             val fps = when (fpsGroup.checkedRadioButtonId) {
                 R.id.fps120 -> 120
+                R.id.fps144 -> 144
+                R.id.fpsUnlimited -> 0  // 0 = 无限制,服务端用最大帧率
                 R.id.fps90 -> 90
                 else -> 60
             }

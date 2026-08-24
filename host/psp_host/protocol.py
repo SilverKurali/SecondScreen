@@ -138,7 +138,11 @@ def negotiate(want, have):
     if w < 640 or h < 480:
         return False, {"type": "welcome", "ok": False, "reason": "Resolution too small"}
 
-    fps = min(want.get("fps", 60), have["fps"])
+    fps = want.get("fps", 60)
+    if fps == 0:
+        fps = have["fps"]  # 无限制: 使用服务端最大帧率
+    else:
+        fps = min(fps, have["fps"])
     bitrate = min(want.get("bitrate_kbps", have["bitrate_kbps"]), have["bitrate_kbps"])
 
     return True, {

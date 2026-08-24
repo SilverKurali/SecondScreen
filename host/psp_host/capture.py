@@ -135,7 +135,7 @@ def build_pipeline(args):
         # Actually x264enc property: "bitrate" is in kbps
         enc_props_str += f" bitrate={bitrate_kbps}"
         # Add vbv buffer size for CBR-like behavior
-        enc_props_str += f" vbv-buf-capacity={bitrate_kbps}"
+        enc_props_str += f" vbv-buf-capacity={min(bitrate_kbps, 60000)}"
     elif encoder_name in ("nvh264enc", "vaapih264enc"):
         # These use "bitrate" in kbps
         enc_props_str += f" bitrate={bitrate_kbps}"
@@ -155,6 +155,7 @@ def build_pipeline(args):
         f"capsfilter caps=\"{capsfilter}\" ! "
         f"{encoder_name} {enc_props_str} ! "
         f"h264parse config-interval=-1 ! "
+        f"capsfilter caps=\"video/x-h264,alignment=au,stream-format=byte-stream\" ! "
         f"appsink name=psp_sink max-buffers=1 drop=true sync=false emit-signals=true"
     )
 
