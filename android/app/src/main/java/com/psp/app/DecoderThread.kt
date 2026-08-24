@@ -88,13 +88,18 @@ class DecoderThread(
             if (!initCodec()) return
 
             while (running) {
-                val frame = frameQueue.poll()
+                val frame = frameQueue.peek()
                 if (frame == null) {
                     Thread.sleep(1)
                     continue
                 }
 
-                decodeFrame(frame)
+                if (decodeFrame(frame)) {
+                    frameQueue.poll()  // 解码成功后才移除
+                } else {
+                    // 解码器忙,稍后重试
+                    Thread.sleep(1)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Decoder error: ${e.message}")
@@ -150,33 +155,44 @@ class DecoderThread(
         }
     }
 
-    private fun decodeFrame(frame: FrameData) {
-        val codec = mediaCodec ?: return
-        var index: Int
+    private fun decodeFrame(frame: FrameData): Boolean {
+        val codec = mediaCodec ?: return false
 
         try {
-            // Get input buffer (non-blocking; try with small timeout)
-            index = codec.dequeueInputBuffer(TIMEOUT_US)
+            // Get input buffer (try with longer timeout)
+            var index = codec.dequeueInputBuffer(50000L)  // 50ms
             if (index < 0) {
-                // If no buffer available, skip this frame
-                return
+                // If no buffer available, try draining output first
+                drainOutput(codec)
+                // Try again with shorter timeout
+                index = codec.dequeueInputBuffer(10000L)
+                if (index < 0) return false  // Still busy, retry later
             }
 
-            val inputBuffer = codec.getInputBuffer(index) ?: return
+            val inputBuffer = codec.getInputBuffer(index) ?: return false
             inputBuffer.clear()
             inputBuffer.put(frame.data)
             val flags = if (frame.isKeyframe) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
             codec.queueInputBuffer(index, 0, frame.data.size, 0, flags)
 
-            // Dequeue output
-            val bufferInfo = MediaCodec.BufferInfo()
-            var outIndex = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+            // Drain output to free buffers
+            drainOutput(codec)
 
+            return true
+        } catch (e: Exception) {
+            Log.w(TAG, "Decode error: ${e.message}")
+            return false
+        }
+    }
+
+    private fun drainOutput(codec: MediaCodec) {
+        val bufferInfo = MediaCodec.BufferInfo()
+        while (true) {
+            val outIndex = codec.dequeueOutputBuffer(bufferInfo, 0L)  // 不阻塞
             when {
                 outIndex >= 0 -> {
                     codec.releaseOutputBuffer(outIndex, true)
                     decodedFrames++
-                    callback.onFrameDecoded()
 
                     // Calculate FPS
                     val now = System.nanoTime()
@@ -191,11 +207,10 @@ class DecoderThread(
                     Log.d(TAG, "Output format changed: ${codec.outputFormat}")
                 }
                 outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    // No output available yet, try again next frame
+                    break  // 没有更多输出了
                 }
+                else -> break
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Decode error: ${e.message}")
         }
     }
 }
