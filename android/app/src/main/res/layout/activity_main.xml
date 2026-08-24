@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Video SurfaceView (fullscreen, behind overlay) -->
+    <SurfaceView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- ==================== 连接界面 (未连接时显示) ==================== -->
+    <ScrollView
+        android:id="@+id/connectOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PSP 扩展屏"
+                android:textSize="28sp"
+                android:textColor="@android:color/white"
+                android:textStyle="bold"
+                android:layout_marginTop="32dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Android 扩展显示器"
+                android:textSize="14sp"
+                android:textColor="#AAAAAA"
+                android:layout_marginBottom="24dp" />
+
+            <!-- ====== 模式切换标签 ====== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:background="#333333"
+                android:gravity="center">
+
+                <TextView
+                    android:id="@+id/tabWifi"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="WiFi"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:background="#FF6200EE"
+                    android:padding="8dp" />
+
+                <TextView
+                    android:id="@+id/tabUsb"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="USB"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp"
+                    android:padding="8dp" />
+
+                <TextView
+                    android:id="@+id/tabWireless"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="无线 ADB"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp"
+                    android:padding="8dp" />
+            </LinearLayout>
+
+            <!-- ====== WiFi 面板 ====== -->
+            <LinearLayout
+                android:id="@+id/panelWifi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="visible"
+                android:paddingTop="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="发现的主机"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- 设备列表 -->
+                <ListView
+                    android:id="@+id/deviceList"
+                    android:layout_width="match_parent"
+                    android:layout_height="120dp"
+                    android:background="#222222"
+                    android:divider="#444444"
+                    android:dividerHeight="1dp" />
+
+                <TextView
+                    android:id="@+id/noDevices"
+                    android:layout_width="match_parent"
+                    android:layout_height="32dp"
+                    android:gravity="center"
+                    android:text="正在扫描局域网..."
+                    android:textColor="#888888"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="或手动输入"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp"
+                    android:layout_marginTop="12dp" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/ipLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="主机 IP"
+                    android:theme="@style/ThemeOverlay.AppCompat.Dark">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/ipInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number|numberDecimal|text"
+                        android:text="192.168.1.100"
+                        android:textColor="@android:color/white" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/portLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="端口"
+                    android:theme="@style/ThemeOverlay.AppCompat.Dark">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/portInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:text="4747"
+                        android:textColor="@android:color/white" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <Button
+                    android:id="@+id/connectBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="8dp"
+                    android:text="连接"
+                    android:backgroundTint="#FF3700B3" />
+            </LinearLayout>
+
+            <!-- ====== USB 面板 ====== -->
+            <LinearLayout
+                android:id="@+id/panelUsb"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:paddingTop="16dp"
+                android:gravity="center">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔌 USB 有线连接"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="通过 USB 数据线直连，延迟最低"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="16dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="要求：\n1. 手机已通过 USB 连接电脑\n2. 已启用 USB 调试\n3. PC 端已设置 ADB 反向隧道\n  (adb reverse tcp:4747 tcp:4747)"
+                    android:textColor="#888888"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="4dp"
+                    android:layout_marginBottom="16dp" />
+
+                <Button
+                    android:id="@+id/connectUsbBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="USB 连接 (127.0.0.1)"
+                    android:backgroundTint="#FF6200EE" />
+            </LinearLayout>
+
+            <!-- ====== 无线 ADB 面板 ====== -->
+            <LinearLayout
+                android:id="@+id/panelWireless"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:paddingTop="16dp"
+                android:gravity="center">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📡 无线 ADB 连接"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="通过 WiFi ADB 调试桥连接"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="16dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="要求：\n1. PC 与手机在同一局域网\n2. 已建立无线 ADB 连接\n  (adb connect 手机IP:5555)\n3. PC 端已设置 ADB 反向隧道\n  (adb reverse tcp:4747 tcp:4747)"
+                    android:textColor="#888888"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="4dp"
+                    android:layout_marginBottom="16dp" />
+
+                <Button
+                    android:id="@+id/connectWirelessBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="无线 ADB 连接 (127.0.0.1)"
+                    android:backgroundTint="#FF3700B3" />
+            </LinearLayout>
+
+            <!-- 设置按钮 -->
+            <Button
+                android:id="@+id/settingsBtn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="12dp"
+                android:text="画质设置"
+                android:backgroundTint="#333333" />
+
+            <TextView
+                android:id="@+id/versionInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PSP v0.1.0"
+                android:textColor="#555555"
+                android:textSize="12sp"
+                android:layout_marginTop="12dp" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ==================== 统计信息 (连接时显示) ==================== -->
+    <LinearLayout
+        android:id="@+id/statsOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="#88000000"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/statsFps"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="FPS: 0"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/statsLatency"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="延迟: 0ms"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/statsBitrate"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="0 Mbps"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/statsResolution"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="0x0"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 断开按钮 (连接时显示) -->
+    <ImageButton
+        android:id="@+id/disconnectBtn"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentBottom="true"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:background="#66000000"
+        android:visibility="gone"
+        android:contentDescription="断开" />
+
+</RelativeLayout>
