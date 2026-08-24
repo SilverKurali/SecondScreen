@@ -291,7 +291,7 @@ class MainActivity : AppCompatActivity() {
         bubble.visibility = View.GONE
         bubble.elevation = 10f
 
-        (findViewById<RelativeLayout>(android.R.id.content)).addView(bubble)
+        (findViewById<android.widget.FrameLayout>(android.R.id.content)).addView(bubble)
 
         bubble.setOnClickListener {
             toggleFloatingMenu()
