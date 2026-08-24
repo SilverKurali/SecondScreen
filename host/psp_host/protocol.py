@@ -126,7 +126,9 @@ def negotiate(want, have):
         welcome message to send.
     """
     supported_codecs = {"h264", "vp9", "vp8"}
-    codec = want.get("codec", "h264")
+    # Always prefer h264: x264enc is far faster and higher quality than
+    # software vp9enc, and Android hardware H.264 decoding is universal.
+    codec = "h264"
     if codec not in supported_codecs:
         return False, {"type": "welcome", "ok": False, "reason": f"Unsupported codec: {codec}"}
 
@@ -150,4 +152,6 @@ def negotiate(want, have):
         "bitrate_kbps": bitrate,
         "virtual_display_width": have["width"],
         "virtual_display_height": have["height"],
+        "display_mode": want.get("display_mode", 0),
+        "use_hardware_encoder": want.get("use_hardware_encoder", False),
     }

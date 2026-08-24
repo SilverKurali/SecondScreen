@@ -12,7 +12,7 @@ android {
         minSdk = 26  // Android 8.0+ for low-latency MediaCodec features
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
 
         // Only ARM devices (Android phones/tablets/TVs)
         ndk {

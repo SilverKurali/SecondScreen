@@ -1,5 +1,6 @@
 package com.psp.app
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -58,6 +59,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statsBitrate: TextView
     private lateinit var statsResolution: TextView
 
+    // Floating bubble (连接后显示的悬浮球)
+    private var floatingBubble: View? = null
+    private var isMenuVisible = false
+
     // State
     private var streamClient: StreamClient? = null
     private var decoderThread: DecoderThread? = null
@@ -68,6 +73,8 @@ class MainActivity : AppCompatActivity() {
     private var pingRunnable: Runnable? = null
     private var isConnected = false
     private var touchDown = false
+    private var screenWidthPx = 0
+    private var screenHeightPx = 0
 
     // Device list adapter
     private val discoveredHosts = mutableListOf<DiscoveryClient.DiscoveredHost>()
@@ -90,11 +97,40 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
+        // 检测屏幕尺寸
+        val display = windowManager.defaultDisplay
+        val metrics = android.util.DisplayMetrics()
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            display.getRealMetrics(metrics)
+        } else {
+            display.getMetrics(metrics)
+        }
+        screenWidthPx = metrics.widthPixels
+        screenHeightPx = metrics.heightPixels
+        // 自动设置分辨率匹配屏幕比例
+        val ratio = screenWidthPx.toFloat() / screenHeightPx.toFloat()
+        if (ratio > 1.0f) { // 横屏
+            currentSettings = StreamSettings(
+                width = 1920,
+                height = (1920 / ratio).toInt().coerceAtMost(1920),
+                fps = 60,
+                qualityMultiplier = 1.0f
+            )
+        } else { // 竖屏
+            currentSettings = StreamSettings(
+                width = (1080 * ratio).toInt().coerceAtLeast(640),
+                height = 1080,
+                fps = 60,
+                qualityMultiplier = 1.0f
+            )
+        }
+
         initViews()
         setupTabs()
         setupButtons()
         setupTouchInput()
         startDiscovery()
+        setupFloatingBubble()
     }
 
     // ==================== 初始化 ====================
@@ -237,6 +273,105 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ==================== 悬浮球菜单 ====================
+
+    private fun setupFloatingBubble() {
+        // 悬浮球 - 使用 ImageView 或通过代码创建
+        val bubble = ImageButton(this)
+        bubble.setImageResource(android.R.drawable.ic_menu_more)
+        bubble.setBackgroundColor(android.graphics.Color.parseColor("#88000000"))
+        bubble.scaleType = ImageView.ScaleType.CENTER_INSIDE
+        bubble.setPadding(12, 12, 12, 12)
+
+        val params = RelativeLayout.LayoutParams(56.dpToPx(), 56.dpToPx())
+        params.addRule(RelativeLayout.ALIGN_PARENT_END)
+        params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+        params.setMargins(0, 0, 16.dpToPx(), 80.dpToPx())
+        bubble.layoutParams = params
+        bubble.visibility = View.GONE
+        bubble.elevation = 10f
+
+        (findViewById<RelativeLayout>(android.R.id.content)).addView(bubble)
+
+        bubble.setOnClickListener {
+            toggleFloatingMenu()
+        }
+
+        floatingBubble = bubble
+    }
+
+    private fun toggleFloatingMenu() {
+        isMenuVisible = !isMenuVisible
+        if (isMenuVisible) {
+            showFloatingMenu()
+        } else {
+            hideFloatingMenu()
+        }
+    }
+
+    private fun showFloatingMenu() {
+        // 创建菜单面板（可复用现有设置对话框的逻辑）
+        val menuItems = listOf(
+            "画质设置" to {
+                val dialog = SettingsDialog(this, currentSettings) { s ->
+                    currentSettings = s
+                }
+                dialog.show()
+                isMenuVisible = false
+            },
+            "切换模式" to {
+                // 切换镜像/扩展模式 - 通过重新连接发送新参数
+                val current = currentSettings
+                currentSettings = current.copy(
+                    displayMode = if (current.displayMode == 0) 1 else 0
+                )
+                Toast.makeText(this,
+                    if (currentSettings.displayMode == 0) "镜像模式" else "扩展模式",
+                    Toast.LENGTH_SHORT).show()
+                // 重新连接以应用新设置
+                reconnect()
+            },
+            "编码器: ${if (currentSettings.useHardwareEncoder) "硬件" else "软件"}" to {
+                currentSettings = currentSettings.copy(
+                    useHardwareEncoder = !currentSettings.useHardwareEncoder
+                )
+                Toast.makeText(this,
+                    if (currentSettings.useHardwareEncoder) "硬件编码 (NVIDIA)" else "软件编码 (x264)",
+                    Toast.LENGTH_SHORT).show()
+                reconnect()
+            },
+            "断开连接" to { disconnect() }
+        )
+
+        // 用 PopupMenu 或自定义面板
+        val popup = PopupMenu(this, floatingBubble)
+        menuItems.forEach { (label, _) -> popup.menu.add(label) }
+        popup.setOnMenuItemClickListener { item ->
+            val idx = menuItems.indexOfFirst { it.first == item.title.toString() }
+            if (idx >= 0) {
+                menuItems[idx].second.invoke()
+                true
+            } else false
+        }
+        popup.setOnDismissListener { isMenuVisible = false }
+        popup.show()
+    }
+
+    private fun hideFloatingMenu() {
+        isMenuVisible = false
+    }
+
+    private fun reconnect() {
+        if (streamClient == null) return
+        val host = streamClient?.let { "127.0.0.1" } ?: return
+        disconnect()
+        // 短暂延迟后重新连接
+        mainHandler.postDelayed({ connect(host, 4747) }, 500)
+    }
+
+    private fun Int.dpToPx(): Int =
+        (this * resources.displayMetrics.density).toInt()
+
     // ==================== 局域网发现 ====================
 
     private fun startDiscovery() {
@@ -330,7 +465,9 @@ class MainActivity : AppCompatActivity() {
             height = currentSettings.height,
             fps = currentSettings.fps,
             bitrateKbps = bitrateKbps,
-            codec = "vp9"
+            codec = "h264",
+            screenWidth = screenWidthPx,
+            screenHeight = screenHeightPx
         )
 
         connectOverlay.visibility = View.GONE
@@ -344,6 +481,7 @@ class MainActivity : AppCompatActivity() {
                     isConnected = true
                     startStatsUpdates()
                     startDecoder(params)
+                    floatingBubble?.visibility = View.VISIBLE
                 }
             }
 
@@ -363,6 +501,13 @@ class MainActivity : AppCompatActivity() {
             override fun onLatencyMeasured(ms: Long) {
                 mainHandler.post {
                     statsLatency.text = "延迟: ${ms}ms"
+                }
+            }
+
+            override fun onBitrateChanged(bitrateKbps: Int) {
+                mainHandler.post {
+                    val mbps = bitrateKbps / 1000f
+                    statsBitrate.text = "${"%.2f".format(mbps)} Mbps"
                 }
             }
         })
@@ -427,6 +572,8 @@ class MainActivity : AppCompatActivity() {
         connectOverlay.visibility = View.VISIBLE
         statsOverlay.visibility = View.GONE
         disconnectBtn.visibility = View.GONE
+        floatingBubble?.visibility = View.GONE
+        isMenuVisible = false
     }
 
     override fun onDestroy() {

@@ -19,7 +19,9 @@ data class StreamSettings(
     val width: Int = 1920,
     val height: Int = 1080,
     val fps: Int = 60,
-    val qualityMultiplier: Float = 1.0f
+    val qualityMultiplier: Float = 1.0f,
+    val displayMode: Int = 0,  // 0=镜像(mirror), 1=扩展(extend)
+    val useHardwareEncoder: Boolean = false  // false=软件x264, true=硬件nvh264enc
 )
 
 class SettingsDialog(
@@ -105,7 +107,8 @@ class SettingsDialog(
             val qIdx = qualitySeekBar.progress.coerceIn(0, qualityValues.size - 1)
             val quality = qualityValues[qIdx]
 
-            onSave(StreamSettings(w, h, fps, quality))
+            onSave(StreamSettings(w, h, fps, quality,
+                currentSettings.displayMode, currentSettings.useHardwareEncoder))
         }
 
         builder.setNegativeButton("取消", null)

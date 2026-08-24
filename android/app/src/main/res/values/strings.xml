@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">PSP 扩展屏</string>
+    <string name="app_name">SecondScreen</string>
     <string name="connect">连接</string>
     <string name="disconnect">断开</string>
     <string name="usb_mode">USB 模式</string>

@@ -87,11 +87,22 @@ class Session:
             hello = json.loads(payload.decode("utf-8"))
             logger.info("Handshake from %s: %s", self._addr, hello.get("device", "unknown"))
 
-            if hello.get("type") != "hello":
-                self._send_control({"type": "welcome", "ok": False, "reason": "Expected hello"})
-                return False
-
-            want = hello.get("want", {})
+            # 提取设备屏幕尺寸（用于比例自适应）
+            screen_width = hello.get("screen_width", 0)
+            screen_height = hello.get("screen_height", 0)
+            if screen_width > 0 and screen_height > 0:
+                device_ratio = screen_width / screen_height
+                logger.info("Device screen: %dx%d (ratio=%.2f)", screen_width, screen_height, device_ratio)
+                # 根据设备比例调整请求分辨率
+                want = hello.get("want", {})
+                want_w = want.get("width", 1920)
+                want_h = want.get("height", 1080)
+                if device_ratio > 1.0:  # 横屏
+                    want["height"] = int(want_w / device_ratio)
+                else:  # 竖屏
+                    want["width"] = int(want_h * device_ratio)
+            else:
+                want = hello.get("want", {})
             have = {
                 "codec": self._args.codec,
                 "width": self._args.width,
@@ -141,6 +152,17 @@ class Session:
             import gi
             gi.require_version("Gst", "1.0")
             from gi.repository import Gst, GLib  # noqa: F401
+
+            # Use the negotiated codec from handshake, not the CLI default.
+            if hasattr(self, '_session_params') and self._session_params:
+                negotiated_codec = self._session_params.get("codec")
+                if negotiated_codec:
+                    self._args.codec = negotiated_codec
+                # 如果客户端请求硬件编码,在 args 中标记
+                use_hw = self._session_params.get("use_hardware_encoder", False)
+                if use_hw:
+                    # 暂时标记,后续通过修改 encoder 优先级实现
+                    self._args._use_hardware_encoder = True
 
             codec, pipeline_str, sink_name = build_pipeline(self._args)
             self._codec = codec
@@ -559,8 +581,8 @@ def run_server(args):
     print(f"   服务端口: {args.port}")
     print(f"   Android 端打开 PSP 应用即可自动发现本机")
     if is_wayland:
-        print(f"   🖥 Wayland 模式: 首次运行会弹出屏幕共享对话框")
-        print(f"     请选择要共享的屏幕（或虚拟显示器区域）")
+        print(f"   🖥 Wayland 模式: 使用 Mutter ScreenCast 虚拟显示器")
+        print(f"     连接后自动创建扩展屏幕（非镜像模式）")
     print()
 
     # ADB connection setup

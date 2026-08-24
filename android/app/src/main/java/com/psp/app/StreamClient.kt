@@ -38,6 +38,7 @@ class StreamClient(
         fun onControlMessage(json: JSONObject)
         fun onDisconnected(reason: String)
         fun onLatencyMeasured(ms: Long)
+        fun onBitrateChanged(bitrateKbps: Int)
     }
 
     data class SessionParams(
@@ -55,7 +56,9 @@ class StreamClient(
         val height: Int = 1080,
         val fps: Int = 60,
         val bitrateKbps: Int = 10000,
-        val codec: String = "h264"
+        val codec: String = "h264",
+        val screenWidth: Int = 0,
+        val screenHeight: Int = 0
     )
 
     private var socket: Socket? = null
@@ -66,6 +69,9 @@ class StreamClient(
     private var running = false
     private var pingId = 0
     private var lastPingTime = 0L
+    private var totalBytesReceived = 0L
+    private var lastBitrateTime = 0L
+    private var bitrateBytes = 0L
 
     fun start() {
         Thread({ doConnect() }, "StreamClient").start()
@@ -121,12 +127,18 @@ class StreamClient(
             put("type", "hello")
             put("proto", 1)
             put("device", android.os.Build.MODEL)
+            put("screen_width", settings.screenWidth)
+            put("screen_height", settings.screenHeight)
+            put("display_mode", 0)  // 0=镜像, 1=扩展
+            put("use_hardware_encoder", false)  // false=软件, true=硬件
             put("want", JSONObject().apply {
                 put("codec", settings.codec)
                 put("width", settings.width)
                 put("height", settings.height)
                 put("fps", settings.fps)
                 put("bitrate_kbps", settings.bitrateKbps)
+                put("display_mode", 0)
+                put("use_hardware_encoder", false)
             })
             put("input", true)
         }
@@ -175,6 +187,18 @@ class StreamClient(
                 // Read body
                 val body = ByteArray(bodyLen)
                 readExact(inputStream!!, body, bodyLen)
+
+                // Track received bytes for bitrate calculation
+                val now = System.nanoTime()
+                bitrateBytes += bodyLen
+                if (lastBitrateTime == 0L) lastBitrateTime = now
+                val elapsed = (now - lastBitrateTime) / 1_000_000_000f
+                if (elapsed >= 1.0f) {
+                    val kbps = (bitrateBytes * 8f / 1000f / elapsed).toInt()
+                    bitrateBytes = 0
+                    lastBitrateTime = now
+                    callback.onBitrateChanged(kbps)
+                }
 
                 val flags = body[0].toInt() and 0xFF
                 val payload = body.copyOfRange(1, bodyLen)
