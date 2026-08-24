@@ -159,6 +159,10 @@ class Session:
             if sample is None:
                 return False
 
+            if not hasattr(self, '_first_frame_logged'):
+                self._first_frame_logged = True
+                logger.info("First encoded frame received from pipeline")
+
             buf = sample.get_buffer()
             # Get buffer flags
             flags = buf.get_flags()

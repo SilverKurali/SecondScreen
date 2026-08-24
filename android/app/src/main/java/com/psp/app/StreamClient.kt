@@ -85,7 +85,7 @@ class StreamClient(
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), 5000)  // 5s timeout
             sock.tcpNoDelay = true
-            sock.soTimeout = 10000  // 10s read timeout
+            sock.soTimeout = 30000  // 30s read timeout (first frame may take a while)
             socket = sock
             inputStream = sock.getInputStream()
             outputStream = sock.getOutputStream()

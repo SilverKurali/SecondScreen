@@ -146,6 +146,7 @@ def build_pipeline(args):
     pipeline_str = (
         f"{src_str} ! "
         f"videoconvert ! "
+        f"videoscale ! "
         f"videorate ! "
         f"capsfilter caps=\"{capsfilter}\" ! "
         f"{encoder_name} {enc_props_str} ! "
@@ -229,14 +230,12 @@ def _build_x11_source(args):
 
 
 def _build_wayland_source(args):
-    """Build Wayland capture source via PipeWire screencast portal.
+    """Build Wayland capture source via Mutter ScreenCast.
 
-    Uses pipewiresrc which triggers the xdg-desktop-portal screen sharing dialog.
-    The user will need to select/confirm the screen to share.
-
-    If --region is specified, the portal will share the full screen
-    and we crop it via videocrop. If --output is specified, we try to
-    pass it as the target PipeWire node.
+    Creates a virtual extended-display monitor through GNOME Shell's
+    native ``org.gnome.Mutter.ScreenCast`` D-Bus API and streams it
+    via PipeWire.  This bypasses the broken xdg-desktop-portal screencast
+    dialog which hangs for headless apps.
     """
     # Check if pipewiresrc is available
     if not _check_element("pipewiresrc"):
@@ -246,43 +245,12 @@ def _build_wayland_source(args):
         )
         return _build_x11_source(args)
 
-    logger.info("Using Wayland capture via pipewiresrc (PipeWire screencast portal)")
+    logger.info("Using Wayland capture via Mutter ScreenCast (virtual display)")
 
-    # Build the pipewiresrc capture pipeline
-    # pipewiresrc autoconnect=true will show the portal dialog
-    src = "pipewiresrc autoconnect=true do-timestamp=true"
+    from . import wportal
+    node_id = wportal.create_virtual_display(args.width, args.height)
 
-    # If region is specified, capture full screen and crop
-    if args.region:
-        try:
-            parts = args.region.replace("x", ",").split(",")
-            sx, sy, sw, sh = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
-            logger.info("Wayland region crop: %d,%d %dx%d", sx, sy, sw, sh)
-            src += (
-                f" ! videocrop left={sx} right={sx} top={sy} bottom={sy}"
-            )
-            # Note: videocrop doesn't work with source coordinates directly.
-            # Alternative: use the stream dimensions from pipewire and rely on
-            # the user selecting the correct monitor. For region, we can't
-            # easily crop on Wayland without knowing the source dimensions.
-            logger.warning(
-                "Region cropping on Wayland is approximate. "
-                "Please select the correct monitor in the screen sharing dialog."
-            )
-        except (ValueError, IndexError):
-            logger.warning("Invalid --region format on Wayland, ignoring")
-
-    # If output is specified, try to set stream-properties to select it
-    # This is a hint to pipewire about which monitor to capture
-    if args.output:
-        # We can't directly select a monitor by name via pipewiresrc properties
-        # But we can set the stream-properties hint
-        src += (
-            f" stream-properties=\"properties,"
-            f"window-x=0,window-y=0,"
-            f"window-width={args.width},window-height={args.height}\""
-        )
-
+    src = f"pipewiresrc target-object={node_id} do-timestamp=true"
     logger.info("Wayland source: %s", src)
     return src
 
