@@ -135,7 +135,7 @@ def build_pipeline(args):
         # Actually x264enc property: "bitrate" is in kbps
         enc_props_str += f" bitrate={bitrate_kbps}"
         # Add vbv buffer size for CBR-like behavior
-        enc_props_str += f" vbv-buf-capacity={min(bitrate_kbps, 60000)}"
+        enc_props_str += f" vbv-buf-capacity=1000"
     elif encoder_name in ("nvh264enc", "vaapih264enc"):
         # These use "bitrate" in kbps
         enc_props_str += f" bitrate={bitrate_kbps}"
