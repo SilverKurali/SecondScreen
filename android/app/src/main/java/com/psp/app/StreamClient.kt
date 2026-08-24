@@ -68,7 +68,7 @@ class StreamClient(
         private set
     private var running = false
     private var pingId = 0
-    private var lastPingTime = 0L
+    private var lastPingTimeNs = 0L
     private var totalBytesReceived = 0L
     private var lastBitrateTime = 0L
     private var bitrateBytes = 0L
@@ -227,9 +227,9 @@ class StreamClient(
             when (type) {
                 "pong" -> {
                     val id = json.optInt("id")
-                    val now = System.currentTimeMillis()
-                    val latency = now - lastPingTime
-                    callback.onLatencyMeasured(latency)
+                    val nowNs = System.nanoTime()
+                    val latencyMs = (nowNs - lastPingTimeNs) / 1_000_000L
+                    callback.onLatencyMeasured(latencyMs)
                 }
                 "welcome" -> {
                     // Already handled in handshake
@@ -285,7 +285,7 @@ class StreamClient(
     fun sendPing() {
         if (!running) return
         pingId++
-        lastPingTime = System.currentTimeMillis()
+        lastPingTimeNs = System.nanoTime()
         inputSender?.sendPing(pingId)
     }
 }
