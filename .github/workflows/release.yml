@@ -11,6 +11,9 @@
 
 name: Release
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
@@ -199,6 +202,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [read-version, linux-host, windows-host, android]
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
