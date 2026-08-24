@@ -165,6 +165,16 @@ class Session:
                     self._args.width = neg_w
                     self._args.height = neg_h
                     logger.info("Using negotiated resolution: %dx%d", neg_w, neg_h)
+                # 应用协商后的 bitrate (客户端根据画质设置计算)
+                neg_bitrate = self._session_params.get("bitrate_kbps")
+                if neg_bitrate and neg_bitrate > 0:
+                    self._args.bitrate_kbps = neg_bitrate
+                    logger.info("Using negotiated bitrate: %d kbps", neg_bitrate)
+                # 应用协商后的 fps
+                neg_fps = self._session_params.get("fps")
+                if neg_fps and neg_fps > 0:
+                    self._args.fps = neg_fps
+                    logger.info("Using negotiated fps: %d", neg_fps)
                 # 如果客户端请求硬件编码,在 args 中标记
                 use_hw = self._session_params.get("use_hardware_encoder", False)
                 if use_hw:
@@ -440,6 +450,13 @@ class Session:
             except Exception:
                 pass
             self._pipe = None
+        # Stop screencast session so next connection gets a fresh one
+        # (important when display_mode or resolution changes)
+        try:
+            from . import screencast
+            screencast.stop_screencast_session()
+        except Exception:
+            pass
         if self._injector:
             try:
                 self._injector.close()

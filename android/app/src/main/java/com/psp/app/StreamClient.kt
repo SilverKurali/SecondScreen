@@ -58,7 +58,9 @@ class StreamClient(
         val bitrateKbps: Int = 10000,
         val codec: String = "h264",
         val screenWidth: Int = 0,
-        val screenHeight: Int = 0
+        val screenHeight: Int = 0,
+        val displayMode: Int = 0,
+        val useHardwareEncoder: Boolean = false
     )
 
     private var socket: Socket? = null
@@ -129,16 +131,16 @@ class StreamClient(
             put("device", android.os.Build.MODEL)
             put("screen_width", settings.screenWidth)
             put("screen_height", settings.screenHeight)
-            put("display_mode", 0)  // 0=镜像, 1=扩展
-            put("use_hardware_encoder", false)  // false=软件, true=硬件
+            put("display_mode", settings.displayMode)
+            put("use_hardware_encoder", settings.useHardwareEncoder)
             put("want", JSONObject().apply {
                 put("codec", settings.codec)
                 put("width", settings.width)
                 put("height", settings.height)
                 put("fps", settings.fps)
                 put("bitrate_kbps", settings.bitrateKbps)
-                put("display_mode", 0)
-                put("use_hardware_encoder", false)
+                put("display_mode", settings.displayMode)
+                put("use_hardware_encoder", settings.useHardwareEncoder)
             })
             put("input", true)
         }

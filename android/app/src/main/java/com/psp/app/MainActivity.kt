@@ -64,6 +64,8 @@ class MainActivity : AppCompatActivity() {
     private var isMenuVisible = false
 
     // State
+    private var connectedHost: String = ""
+    private var connectedPort: Int = 4747
     private var streamClient: StreamClient? = null
     private var decoderThread: DecoderThread? = null
     private var currentSettings = StreamSettings()
@@ -315,6 +317,8 @@ class MainActivity : AppCompatActivity() {
             "画质设置" to {
                 val dialog = SettingsDialog(this, currentSettings) { s ->
                     currentSettings = s
+                    // 重新连接以应用新画质设置
+                    reconnect()
                 }
                 dialog.show()
                 isMenuVisible = false
@@ -362,11 +366,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun reconnect() {
-        if (streamClient == null) return
-        val host = streamClient?.let { "127.0.0.1" } ?: return
+        if (streamClient == null && !isConnected) return
+        val host = connectedHost
+        val port = connectedPort
         disconnect()
-        // 短暂延迟后重新连接
-        mainHandler.postDelayed({ connect(host, 4747) }, 500)
+        // 短暂延迟后重新连接以应用新设置
+        mainHandler.postDelayed({ connect(host, port) }, 500)
     }
 
     private fun Int.dpToPx(): Int =
@@ -454,6 +459,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun connect(host: String, port: Int) {
         if (isConnected) return
+        connectedHost = host
+        connectedPort = port
 
         val bitrateKbps = calculateBitrate(
             currentSettings.width, currentSettings.height,
@@ -467,7 +474,9 @@ class MainActivity : AppCompatActivity() {
             bitrateKbps = bitrateKbps,
             codec = "h264",
             screenWidth = screenWidthPx,
-            screenHeight = screenHeightPx
+            screenHeight = screenHeightPx,
+            displayMode = currentSettings.displayMode,
+            useHardwareEncoder = currentSettings.useHardwareEncoder
         )
 
         connectOverlay.visibility = View.GONE
@@ -596,7 +605,9 @@ class MainActivity : AppCompatActivity() {
     private fun calculateBitrate(width: Int, height: Int, fps: Int, quality: Float): Int {
         val baseKbps = 10000
         val pixelRatio = (width * height).toFloat() / (1920 * 1080)
-        val fpsRatio = fps.toFloat() / 60f
+        // fps=0 means unlimited; use 144 as the effective fps for bitrate calculation
+        val effectiveFps = if (fps == 0) 144 else fps
+        val fpsRatio = effectiveFps.toFloat() / 60f
         return (baseKbps * pixelRatio * fpsRatio * quality).toInt()
     }
 }
