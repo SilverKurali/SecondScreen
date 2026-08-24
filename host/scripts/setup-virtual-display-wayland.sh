@@ -28,7 +28,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 W=${MODE%x*}
-H=${MODE#*x}
 
 echo "=== PSP Wayland 虚拟显示器设置 ==="
 echo "  分辨率:  $MODE @ ${RATE}Hz"
