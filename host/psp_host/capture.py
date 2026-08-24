@@ -1,6 +1,7 @@
 """GStreamer pipeline construction for screen capture and encoding."""
 
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -140,8 +141,8 @@ def build_pipeline(args):
     elif encoder_name == "theoraenc":
         pass  # quality-based, no bitrate setting
 
-    # The pipeline
-    capsfilter = f"video/x-raw,format=NV12,width={args.width},height={args.height},framerate={args.fps}/1"
+    # The pipeline — use I420 which is compatible with all encoders
+    capsfilter = f"video/x-raw,format=I420,width={args.width},height={args.height},framerate={args.fps}/1"
     pipeline_str = (
         f"{src_str} ! "
         f"videoconvert ! "

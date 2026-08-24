@@ -130,14 +130,11 @@ class DiscoveryClient(
                 Thread.sleep(5000)
                 val now = System.currentTimeMillis()
                 var changed = false
-                val iterator = discoveredDevices.iterator()
-                while (iterator.hasNext()) {
-                    val device = iterator.next()
-                    if (now - device.lastSeen > DEVICE_TIMEOUT_MS) {
-                        iterator.remove()
-                        changed = true
-                        Log.d(TAG, "Device timed out: ${device.label}")
-                    }
+                val toRemove = discoveredDevices.filter { now - it.lastSeen > DEVICE_TIMEOUT_MS }
+                if (toRemove.isNotEmpty()) {
+                    discoveredDevices.removeAll(toRemove)
+                    changed = true
+                    toRemove.forEach { Log.d(TAG, "Device timed out: ${it.label}") }
                 }
                 if (changed) {
                     callback.onDevicesUpdated(discoveredDevices.toList())
