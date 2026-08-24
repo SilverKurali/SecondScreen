@@ -81,7 +81,6 @@ class StreamClient(
     private fun doConnect() {
         try {
             Log.i(TAG, "Connecting to $host:$port ...")
-            callback.onDisconnected("连接中...")
 
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), 5000)  // 5s timeout

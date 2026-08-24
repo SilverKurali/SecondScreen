@@ -336,6 +336,7 @@ class MainActivity : AppCompatActivity() {
         connectOverlay.visibility = View.GONE
         statsOverlay.visibility = View.VISIBLE
         disconnectBtn.visibility = View.VISIBLE
+        statsResolution.text = "连接中..."
 
         streamClient = StreamClient(host, port, settings, object : StreamClient.ClientCallback {
             override fun onConnected(params: StreamClient.SessionParams) {
@@ -375,6 +376,8 @@ class MainActivity : AppCompatActivity() {
         decoderThread?.stop()
         decoderThread = DecoderThread(
             codec = params.codec,
+            width = params.width,
+            height = params.height,
             surface = surfaceView.holder.surface,
             callback = object : DecoderThread.DecoderCallback {
                 override fun onFrameDecoded() {}

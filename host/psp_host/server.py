@@ -460,7 +460,8 @@ def run_server(args):
             sock, addr = server.accept()
             logger.info("Connection from %s:%d", addr[0], addr[1])
             session = Session(sock, addr, args)
-            session.run()
+            t = threading.Thread(target=session.run, daemon=True, name=f"session-{addr[0]}")
+            t.start()
     except KeyboardInterrupt:
         logger.info("Server shutting down")
     finally:

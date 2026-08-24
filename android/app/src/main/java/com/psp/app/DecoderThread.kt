@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
  */
 class DecoderThread(
     private val codec: String,
+    private val width: Int,
+    private val height: Int,
     private val surface: Surface,
     private val callback: DecoderCallback
 ) {
@@ -119,7 +121,7 @@ class DecoderThread(
         Log.i(TAG, "Initializing decoder for $codec (MIME: $mime)")
 
         try {
-            val format = MediaFormat.createVideoFormat(mime, 1920, 1080)
+            val format = MediaFormat.createVideoFormat(mime, width, height)
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 2 * 1024 * 1024)  // 2MB
 
             // Low latency mode (Android 11+)
