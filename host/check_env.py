@@ -112,6 +112,11 @@ def main():
         else:
             check(el, ok, desc, f"debian: sudo apt install gstreamer1.0-plugins-{'ugly' if el=='x264enc' else 'good' if el in ('vp9enc','vp8enc') else 'bad'}")
 
+    # 内置运行时（host/runtime，由 bundle_runtime.sh 生成，免去 apt 安装 gstreamer）
+    _rt = os.path.join(os.path.dirname(__file__), "runtime", "plugins", "gstreamer-1.0")
+    check("内置 GStreamer 运行时 (host/runtime)", os.path.isdir(_rt),
+          "免去系统 gstreamer 安装", "运行 host/bundle_runtime.sh 生成")
+
     # ── 4. 屏幕捕获源 ────────────────────────────────────────
     print(f"\n{BOLD}[4/6] 屏幕捕获源{RESET}")
     session_type = os.environ.get("XDG_SESSION_TYPE", "")

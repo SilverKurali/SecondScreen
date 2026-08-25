@@ -1,0 +1,293 @@
+# Copyright (C) 2007-2009 Johan Dahlin <johan@gnome.org>
+#
+#   module.py: dynamic module for introspected libraries.
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301
+# USA
+
+import importlib
+from contextlib import suppress
+from threading import Lock
+from types import ModuleType
+
+import gi
+import warnings
+
+from ._gi import (
+    CallableInfo,
+    Repository,
+    FunctionInfo,
+    RegisteredTypeInfo,
+    EnumInfo,
+    ObjectInfo,
+    InterfaceInfo,
+    ConstantInfo,
+    StructInfo,
+    UnionInfo,
+    CallbackInfo,
+    Struct,
+    Boxed,
+    Fundamental,
+    CCallback,
+    enum_add,
+    flags_add,
+    GInterface,
+)
+from .types import GObjectMeta, StructMeta
+
+from ._constants import TYPE_NONE, TYPE_BOXED, TYPE_POINTER
+
+
+repository = Repository.get_default()
+
+# Cache of IntrospectionModules that have been loaded.
+_introspection_modules = {}
+
+
+def get_parent_for_object(object_info):
+    parent_object_info = object_info.get_parent()
+
+    if not parent_object_info:
+        # If we reach the end of the introspection info class hierarchy, look
+        # for an existing wrapper on the GType and use it as a base for the
+        # new introspection wrapper. This allows static C wrappers already
+        # registered with the GType to be used as the introspection base
+        # (_gi.GObject for example)
+        gtype = object_info.get_g_type()
+        if gtype and gtype.pytype:
+            return gtype.pytype
+
+        if object_info.get_fundamental() and gtype.is_instantiatable():
+            return Fundamental
+
+        # Otherwise use builtins.object as the base
+        return object
+
+    namespace = parent_object_info.get_namespace()
+    name = parent_object_info.get_name()
+
+    module = importlib.import_module("gi.repository." + namespace)
+    return getattr(module, name)
+
+
+def get_interfaces_for_object(object_info):
+    interfaces = []
+    for interface_info in object_info.get_interfaces():
+        namespace = interface_info.get_namespace()
+        name = interface_info.get_name()
+
+        module = importlib.import_module("gi.repository." + namespace)
+        interfaces.append(getattr(module, name))
+    return interfaces
+
+
+class IntrospectionModule(ModuleType):
+    """An object which wraps an introspection typelib.
+
+    This wrapping creates a python module like representation of the typelib
+    using gi repository as a foundation. Accessing attributes of the module
+    will dynamically pull them in and create wrappers for the members.
+    These members are then cached on this introspection module.
+    """
+
+    def __init__(self, namespace, version=None):
+        """Might raise gi._gi.RepositoryError."""
+        repository.require(namespace, version)
+        super().__init__(f"gi.repository.{namespace}")
+        self._namespace = namespace
+        self._version = version
+
+        path = repository.get_typelib_path(self._namespace)
+        self.__path__ = [path]
+
+        if self._version is None:
+            self._version = repository.get_version(self._namespace)
+
+        self._lock = Lock()
+
+    def __getattr__(self, name):
+        info = repository.find_by_name(self._namespace, name)
+        if not info:
+            raise AttributeError(f"{self.__name__!r} object has no attribute {name!r}")
+
+        if isinstance(info, EnumInfo):
+            g_type = info.get_g_type()
+
+            with self._lock:
+                wrapper = g_type.pytype
+
+                if wrapper is None:
+                    if info.is_flags():
+                        wrapper = flags_add(self, name, g_type, info)
+                    else:
+                        wrapper = enum_add(self, name, g_type, info)
+
+                    wrapper.__info__ = info
+                    for method_info in info.get_methods():
+                        setattr(wrapper, method_info.__name__, method_info)
+
+                if g_type != TYPE_NONE:
+                    g_type.pytype = wrapper
+
+        elif isinstance(info, RegisteredTypeInfo):
+            g_type = info.get_g_type()
+
+            # Create a wrapper.
+            if isinstance(info, ObjectInfo):
+                parent = get_parent_for_object(info)
+                interfaces = tuple(
+                    interface
+                    for interface in get_interfaces_for_object(info)
+                    if not issubclass(parent, interface)
+                )
+                bases = (parent, *interfaces)
+                metaclass = GObjectMeta
+            elif isinstance(info, CallbackInfo):
+                bases = (CCallback,)
+                metaclass = GObjectMeta
+            elif isinstance(info, InterfaceInfo):
+                bases = (GInterface,)
+                metaclass = GObjectMeta
+            elif isinstance(info, (StructInfo, UnionInfo)):
+                if g_type.is_a(TYPE_BOXED):
+                    bases = (Boxed,)
+                elif (
+                    g_type.is_a(TYPE_POINTER)
+                    or g_type == TYPE_NONE
+                    or g_type.fundamental == g_type
+                ):
+                    bases = (Struct,)
+                else:
+                    raise TypeError(
+                        f"unable to create a wrapper for {info.get_namespace()}.{info.get_name()}"
+                    )
+                metaclass = StructMeta
+            else:
+                raise NotImplementedError(info)
+
+            with self._lock:
+                # Check if there is already a Python wrapper that is not a parent class
+                # of the wrapper being created. If it is a parent, it is ok to clobber
+                # g_type.pytype with a new child class wrapper of the existing parent.
+                # Note that the return here never occurs under normal circumstances due
+                # to caching on the __dict__ itself.
+                if g_type != TYPE_NONE:
+                    type_ = g_type.pytype
+                    if type_ is not None and type_ not in bases:
+                        self.__dict__[name] = type_
+                        return type_
+
+                dict_ = {
+                    "__info__": info,
+                    "__module__": self.__name__,
+                    "__gtype__": g_type,
+                }
+                wrapper = metaclass(name, bases, dict_)
+
+                # Register the new Python wrapper.
+                if g_type != TYPE_NONE:
+                    g_type.pytype = wrapper
+
+        elif isinstance(info, FunctionInfo):
+            wrapper = info
+        elif isinstance(info, ConstantInfo):
+            wrapper = info.get_value()
+        else:
+            raise NotImplementedError(info)
+
+        # Cache the newly created wrapper which will then be
+        # available directly on this introspection module instead of being
+        # lazily constructed through the __getattr__ we are currently in.
+        self.__dict__[name] = wrapper
+        return wrapper
+
+    def __repr__(self):
+        path = repository.get_typelib_path(self._namespace)
+        return f"<IntrospectionModule {self._namespace!r} from {path!r}>"
+
+    def __dir__(self):
+        result = set(super().__dir__())
+
+        # update *set* because some repository attributes have already been
+        # wrapped by __getattr__() and included in self.__dict__; but skip
+        # Callback types, as these are not real objects which we can actually
+        # get
+        namespace_infos = repository.get_infos(self._namespace)
+        result.update(
+            info.get_name()
+            for info in namespace_infos
+            if not isinstance(info, CallbackInfo)
+        )
+
+        return list(result)
+
+
+def get_introspection_module(namespace):
+    """:Returns:
+        An object directly wrapping the gi module without overrides.
+
+    Might raise gi._gi.RepositoryError
+    """
+    if namespace in _introspection_modules:
+        return _introspection_modules[namespace]
+
+    version = gi.get_required_version(namespace)
+    module = IntrospectionModule(namespace, version)
+    _introspection_modules[namespace] = module
+    return module
+
+
+def get_platform_specific_module(namespace):
+    """Return the platform-specific module for the given namespace, if available."""
+    with suppress((ValueError, ImportError)):
+        gi.require_version(f"{namespace._namespace}Unix", namespace._version)
+        return importlib.import_module(f"gi.repository.{namespace._namespace}Unix")
+
+    with suppress((ValueError, ImportError)):
+        gi.require_version(f"{namespace._namespace}Win32", namespace._version)
+        return importlib.import_module(f"gi.repository.{namespace._namespace}Win32")
+
+    return None
+
+
+def get_fallback_platform_specific_module_symbol(
+    namespace, platform_namespace, symbol, prefix="g"
+):
+    """Return the original attribute and the wrapper attribute name for a
+    platform-specific symbol fallback.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", gi.PyGIDeprecationWarning)
+        original_attr = getattr(platform_namespace, symbol)
+    wrapper_attr = symbol
+
+    assert platform_namespace._namespace.startswith(namespace._namespace)
+    platform_name = f"{platform_namespace._namespace[len(namespace._namespace) :]}"
+    platform_name_lower = platform_name.lower()
+
+    if isinstance(
+        original_attr, CallableInfo
+    ) and original_attr.get_symbol().startswith(f"{prefix}_{platform_name_lower}_"):
+        wrapper_attr = f"{platform_name_lower}_{symbol}"
+    else:
+        try:
+            info = getattr(original_attr, "__info__")
+            type_name = info.get_type_name()
+            if not type_name or type_name.startswith(f"G{platform_name}"):
+                wrapper_attr = f"{platform_name}{symbol}"
+        except AttributeError:
+            pass
+
+    return (original_attr, wrapper_attr)
