@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 项目文档
+    url: https://github.com/SilverKurali/SecondScreen#readme
+    about: 查看 README 了解项目用法
+  - name: 💬 讨论
+    url: https://github.com/SilverKurali/SecondScreen/discussions
+    about: 如有疑问或讨论，请先发 Discussion

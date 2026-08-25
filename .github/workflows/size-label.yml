@@ -1,0 +1,28 @@
+# Size Label — 按 PR 改动行数自动打标签
+
+name: Size Label
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  size-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pascalgn/size-label-action@v0.5.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          sizes: >
+            {
+              "0": "XS",
+              "10": "S",
+              "50": "M",
+              "250": "L",
+              "1000": "XL",
+              "5000": "XXL"
+            }

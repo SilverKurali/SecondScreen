@@ -1,0 +1,86 @@
+# Lint/Format 矩阵 — Markdown, YAML, 拼写, isort, bandit 安全扫描
+
+name: Lint & Format
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "**.md"
+      - "**.yml"
+      - "**.yaml"
+      - "**.sh"
+      - ".github/workflows/lint-format.yml"
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
+        continue-on-error: true
+        with:
+          globs: |
+            *.md
+            docs/*.md
+            !.github/**/*.md
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install yamllint
+      - name: Lint YAML
+        run: |
+          yamllint .github/ --format colored
+          yamllint **/*.yml **/*.yaml 2>/dev/null || true
+        continue-on-error: true
+
+  spell-check:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: codespell-project/actions-codespell@v2
+        with:
+          check_filenames: true
+          skip: |
+            .git,*.pyc,__pycache__,venv,runtime,.gradle,build,dist,
+            .codegraph,.pytest_cache,*.apk,*.tar.gz,*.zip,*.png,*.jpg
+          ignore_words_list: "te,nd,noe,ist,sie,hel,ba,bu,fo,ro,re,wi"
+        continue-on-error: true
+
+  isort:
+    name: isort (Import Order)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: isort/isort-action@v1
+        with:
+          configuration: "--check-only --diff --profile black --line-length 127"
+        continue-on-error: true
+
+  bandit:
+    name: bandit (Security Lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bandit
+        run: pip install bandit
+      - name: Run bandit
+        run: |
+          bandit -r host/psp_host/ -x tests,venv,runtime \
+            --skip B101,B307,B404,B603,B607 \
+            --confidence high --severity high \
+            --quiet
+        continue-on-error: true

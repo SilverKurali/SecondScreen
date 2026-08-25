@@ -1,0 +1,34 @@
+# PR Labeler — 根据改动路径自动打标签
+# 配合 .github/workflows/labeler.yml 使用
+
+"host":
+  - host/**/*
+
+"android":
+  - android/**/*
+
+"ci":
+  - .github/workflows/*
+
+"scripts":
+  - scripts/**/*
+
+"docs":
+  - docs/**/*
+  - README.md
+  - AGENTS.md
+  - "*.md"
+
+"protocol":
+  - docs/PROTOCOL.md
+  - host/psp_host/protocol.py
+  - tests/test_protocol.py
+
+"gui":
+  - gui.py
+  - host/psp_host/gui.py
+
+"dependencies":
+  - host/requirements.txt
+  - android/**/build.gradle.kts
+  - android/gradle.properties

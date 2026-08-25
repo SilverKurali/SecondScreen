@@ -1,0 +1,39 @@
+# Stale 管理 — 自动关闭僵尸 Issue/PR
+
+name: Stale
+
+on:
+  schedule:
+    - cron: "30 6 * * 1"  # 每周一 06:30 UTC
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Issue
+          stale-issue-message: >
+            此 Issue 已 60 天无活动，标记为"待关闭"。如果仍需讨论，
+            请回复活跃。14 天后将自动关闭。
+          stale-issue-label: "stale"
+          close-issue-message: "此 Issue 因长期无活动而关闭。"
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          exempt-issue-labels: "pinned,security,bug,enhancement,help wanted"
+
+          # PR
+          stale-pr-message: >
+            此 PR 已 30 天无活动，标记为"待关闭"。请继续提交更新，
+            否则 14 天后将自动关闭。
+          stale-pr-label: "stale"
+          close-pr-message: "此 PR 因长期无活动而关闭。"
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          exempt-pr-labels: "pinned,security,dependencies,work-in-progress"

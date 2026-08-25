@@ -1,0 +1,53 @@
+# 覆盖率 — 单元测试代码覆盖率报告
+
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "host/**"
+      - "tests/**"
+      - ".github/workflows/coverage.yml"
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install coverage
+          if [ -f host/requirements.txt ]; then
+            pip install -r host/requirements.txt 2>/dev/null || true
+          fi
+
+      - name: Run coverage
+        run: |
+          cd host
+          PYTHONPATH=. coverage run --source=psp_host \
+            -m unittest discover -s ../tests -p "test_*.py" -v
+          coverage report -m --omit="*/test*"
+          coverage xml --omit="*/test*"
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: host/coverage.xml
+          flags: unittests
+          name: codecov-psp-host
+          fail_ci_if_error: false
+          verbose: false

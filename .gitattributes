@@ -1,0 +1,43 @@
+# Git Attributes — 统一换行符与语言属性
+
+* text=auto
+
+# Python
+*.py text diff=python
+
+# Shell
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Android
+*.kt text diff=kotlin
+*.java text diff=java
+*.kts text
+*.xml text
+*.gradle* text
+
+# Config
+*.yml text
+*.yaml text
+*.json text
+*.md text diff=markdown
+*.txt text
+
+# Binary
+*.apk binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.gz binary
+*.zip binary
+*.so binary
+*.dll binary
+
+# Generated / Cache
+*.pyc binary
+__pycache__ binary
+.venv binary
+venv binary
+runtime binary

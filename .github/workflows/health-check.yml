@@ -1,0 +1,71 @@
+# 每周健康检查 — 确保项目持续可用
+
+name: Weekly Health Check
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"  # 每周一 08:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi python3-gi-cairo \
+            libgirepository1.0-dev libcairo2-dev pkg-config \
+            gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            gir1.2-gtk-4.0 \
+            xvfb
+
+      - name: Install Python deps
+        run: |
+          pip install flake8 mypy coverage
+          if [ -f host/requirements.txt ]; then
+            pip install -r host/requirements.txt 2>/dev/null || true
+          fi
+
+      - name: py_compile + flake8
+        run: |
+          find host/psp_host/ -name "*.py" -print0 | xargs -0 -n1 python -m py_compile
+          python -m py_compile gui.py
+          flake8 host/psp_host/ gui.py --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Unit tests
+        run: |
+          cd host
+          PYTHONPATH=. python -m unittest discover -s ../tests -p "test_*.py" -v
+
+      - name: API 兼容性检查
+        run: |
+          cd host
+          PYTHONPATH=. python - <<'PY'
+          from psp_host import protocol, config, main, gui
+          assert hasattr(protocol, "negotiate")
+          assert hasattr(protocol, "make_frame")
+          assert hasattr(protocol, "FrameReader")
+          assert hasattr(config, "RESOLUTIONS")
+          assert hasattr(config, "parse_args")
+          assert hasattr(main, "main")
+          assert hasattr(gui, "run_gui")
+          print("OK 所有模块 API 符合预期")
+          PY
+
+      - name: Create health badge
+        run: |
+          echo "✅ Health Check Passed — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
