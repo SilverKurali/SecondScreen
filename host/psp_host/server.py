@@ -467,6 +467,9 @@ class Session:
         self._running = False
         if self._pipe:
             try:
+                import gi
+                gi.require_version("Gst", "1.0")
+                from gi.repository import Gst
                 self._pipe.set_state(Gst.State.NULL)
             except Exception:
                 pass

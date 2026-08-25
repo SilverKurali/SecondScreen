@@ -93,8 +93,6 @@ def create_screencast_session(connector=None, width=1920, height=1080):
     Returns:
         PipeWire node ID (int) or None on failure.
     """
-    global _session_path, _node_id
-
     # Always clean up any existing session first to prevent resource leaks
     stop_screencast_session()
 
@@ -365,7 +363,7 @@ def ensure_screencast_session(width=1920, height=1080):
     shown exactly once (first connection); later reconnects just re-attach a
     GStreamer pipeline to the same live PipeWire node.
     """
-    global _node_id, _session_valid
+    global _session_valid
     if _node_id is not None and _session_valid:
         logger.info("Reusing existing ScreenCast session (node=%d)", _node_id)
         return _node_id
