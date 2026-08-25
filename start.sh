@@ -128,7 +128,8 @@ do_remove_screen() {
 do_status() {
     echo -e "${BOLD}── 状态 ──${RESET}"
     if server_running; then echo -e "  服务: ${GREEN}运行中 (PID $(cat "$PIDFILE"))${RESET}"; else echo -e "  服务: ${RED}未运行${RESET}"; fi
-    echo "  虚拟显示器: $(headless_list | tr '\n' ' ')${headless_list:-(none)}"
+    local hs; hs="$(headless_list | tr '\n' ' ')"
+    echo "  虚拟显示器: ${hs:-(none)}"
     echo "  adb 设备:"; adb devices 2>/dev/null | sed 's/^/    /' || echo "    (adb 不可用)"
     [[ -f "$LOG" ]] && echo "  日志: $LOG (tail -n 20 可查看)"
 }
