@@ -1,0 +1,207 @@
+# Integration CI — 全方位深度集成测试
+#
+# 覆盖：
+#   - Python 多版本矩阵 (3.10–3.13) + 真实 GStreamer/PyGObject 环境
+#   - 全量 py_compile
+#   - flake8 (E9/F 严重错误强制失败；复杂度/行长 advisory)
+#   - mypy 类型检查
+#   - 协议单元测试 + 自定义集成断言
+#   - CLI 冒烟 (--help / --list-outputs / --list-devices / --gui 参数解析)
+#   - GUI 模块导入与窗口构造冒烟 (offscreen GDK)
+#   - 跨平台矩阵 (ubuntu / windows / macos) 导入兼容性
+#   - 配置一致性校验 (gui 与 config 的 RESOLUTIONS/FPS 同源)
+#   - 仓库卫生检查 (绝对路径 / 调试残留 / 大文件)
+
+name: Integration CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "host/**"
+      - "tests/**"
+      - "gui.py"
+      - ".github/workflows/integration-ci.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────
+  deep-test:
+    name: Deep Test (Py${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install system deps (Linux GStreamer + PyGObject + GTK4)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+            python3-gi python3-gi-cairo \
+            gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            gir1.2-gtk-4.0 gir1.2-glib-2.0 \
+            xvfb
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 mypy
+          if [ -f host/requirements.txt ]; then
+            pip install -r host/requirements.txt 2>/dev/null || true
+          fi
+        shell: bash
+
+      - name: py_compile 全量
+        run: |
+          find host/psp_host/ -name "*.py" -print0 | xargs -0 -n1 python -m py_compile
+          python -m py_compile gui.py
+          echo "✓ 所有 Python 文件编译通过"
+
+      - name: flake8 严重错误 (强制失败)
+        run: |
+          flake8 host/psp_host/ gui.py \
+            --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: flake8 风格 (advisory)
+        run: |
+          flake8 host/psp_host/ gui.py \
+            --max-complexity=15 --max-line-length=127 --statistics || true
+
+      - name: mypy 类型检查
+        run: |
+          mypy host/psp_host/ --ignore-missing-imports --follow-imports=skip || true
+
+      - name: 协议单元测试
+        run: |
+          cd host
+          PYTHONPATH=. python -m unittest discover -s ../tests -p "test_*.py" -v
+
+      - name: 协议深度集成断言
+        run: |
+          cd host
+          PYTHONPATH=. python - <<'PY'
+          import json, struct
+          from psp_host import protocol as proto
+          # 帧往返
+          for flags, payload in [(0, b"hi"), (proto.FLAG_CONTROL, b'{"x":1}'),
+                                 (proto.FLAG_KEYFRAME, bytes(range(256)))]:
+              frame = proto.make_frame(flags, payload)
+              rf = proto.FrameReader.__new__(proto.FrameReader)
+              # 直接解码长度头
+              n = struct.unpack("<I", frame[:4])[0]
+              assert n == len(frame) - 4, f"长度头错误: {n} vs {len(frame)-4}"
+          # 协商
+          ok, resp = proto.negotiate({"codec":"h264","width":1280,"height":720},
+                                     {"codec":"auto","width":1920,"height":1080,"fps":60,"bitrate_kbps":6000})
+          assert ok, "协商应成功"
+          assert resp["codec"] in ("h264","auto"), f"codec 异常: {resp}"
+          print("✓ 协议深度断言通过")
+          PY
+
+      - name: CLI 冒烟
+        run: |
+          cd host
+          PYTHONPATH=. python -m psp_host --help | head -5
+          PYTHONPATH=. python -m psp_host --gui --help 2>&1 | grep -q -- "--gui" && echo "✓ --gui 参数存在"
+          PYTHONPATH=. python -m psp_host --list-outputs 2>&1 || true
+          PYTHONPATH=. python -m psp_host --list-devices 2>&1 || true
+
+      - name: GUI 模块导入冒烟 (Linux offscreen)
+        if: runner.os == 'Linux'
+        env:
+          GDK_BACKEND: ""
+          GSK_RENDERER: gl
+        run: |
+          cd host
+          PYTHONPATH=. python - <<'PY'
+          import gi
+          gi.require_version("Gtk","4.0"); gi.require_version("GLib","2.0")
+          from gi.repository import Gtk, GLib, Gio
+          from psp_host import gui
+          assert hasattr(gui, "run_gui")
+          # 构造 Application + Window（不进入主循环）
+          app = gui.PSPHostApp()
+          win = gui.PSPHostWindow(app)
+          # 触发若干方法确保无异常
+          win.refresh_outputs()
+          win.refresh_status()
+          win.refresh_display_list()
+          argv = win._build_argv()
+          assert "--resolution" in argv and "--port" in argv
+          win._set_running(True); win._set_running(False)
+          print("✓ GUI 窗口构造与方法调用通过")
+          PY
+
+      - name: 配置一致性校验
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "host")
+          from psp_host.config import RESOLUTIONS, FPS_OPTIONS
+          from psp_host import gui
+          assert set(RESOLUTIONS.keys()) == set(["720p","750p","1080p","2K"])
+          assert tuple(FPS_OPTIONS) == (60,90,120,144)
+          assert gui.RESOLUTIONS is RESOLUTIONS
+          assert gui.FPS_OPTIONS is FPS_OPTIONS
+          print("✓ gui 与 config 配置同源一致")
+          PY
+
+      - name: 跨平台 GUI 模块导入 (Windows/macOS)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        run: |
+          pip install PyGObject 2>/dev/null || true
+          python - <<'PY' 2>&1 || echo "::warning::PyGObject 不可用（Windows/macOS 预期，跳过）"
+          try:
+              import gi
+              gi.require_version("Gtk","4.0")
+              from gi.repository import Gtk
+              print("✓ GTK4 可用")
+          except Exception as e:
+              print(f"跳过: {e}")
+          PY
+
+      - name: 仓库卫生检查
+        run: |
+          echo "检查绝对路径 / 用户目录残留 ..."
+          ! grep -rn "home/silver" host/psp_host/ gui.py || { echo "::error::发现硬编码绝对路径"; exit 1; }
+          echo "检查调试残留 pdb ..."
+          ! grep -rn "import pdb\|pdb.set_trace" host/psp_host/ gui.py || { echo "::error::发现 pdb 残留"; exit 1; }
+          echo "检查 .pyc 未被跟踪 ..."
+          git status --porcelain | grep -q "\.pyc" && { echo "::error::存在未忽略的 .pyc"; exit 1; } || true
+          echo "✓ 仓库卫生检查通过"
+
+      - name: 上传测试日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            host/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7

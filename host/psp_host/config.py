@@ -149,6 +149,11 @@ Examples:
         help="Disable touch/mouse input forwarding from Android.",
     )
     parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch the GTK4 graphical control panel instead of the CLI server.",
+    )
+    parser.add_argument(
         "--display",
         default=":0",
         help="X11 display to capture (default: :0)",

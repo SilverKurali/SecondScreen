@@ -13,6 +13,11 @@ def main():
     """Main entry point."""
     args = parse_args()
 
+    # Graphical mode: launch GTK4 control panel
+    if getattr(args, "gui", False):
+        from .gui import run_gui
+        raise SystemExit(run_gui())
+
     # Setup logging
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
