@@ -12,10 +12,9 @@ import org.json.JSONObject
 /**
  * PSP Android 主界面。
  *
- * 三种连接模式切换:
+ * 两种连接模式切换:
  * - WiFi: UDP 自动发现 PC + 手动输入 IP
  * - USB: 通过 ADB reverse 隧道连接 127.0.0.1
- * - 无线 ADB: 通过无线 ADB reverse 隧道连接 127.0.0.1
  */
 class MainActivity : AppCompatActivity() {
 
@@ -32,10 +31,8 @@ class MainActivity : AppCompatActivity() {
     // Tabs
     private lateinit var tabWifi: TextView
     private lateinit var tabUsb: TextView
-    private lateinit var tabWireless: TextView
     private lateinit var panelWifi: LinearLayout
     private lateinit var panelUsb: LinearLayout
-    private lateinit var panelWireless: LinearLayout
 
     // WiFi panel
     private lateinit var deviceList: ListView
@@ -43,12 +40,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ipInput: EditText
     private lateinit var portInput: EditText
     private lateinit var connectBtn: Button
+    private lateinit var ipSpinner: Spinner
 
     // USB panel
     private lateinit var connectUsbBtn: Button
-
-    // Wireless panel
-    private lateinit var connectWirelessBtn: Button
 
     // Settings
     private lateinit var settingsBtn: Button
@@ -59,7 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statsBitrate: TextView
     private lateinit var statsResolution: TextView
 
-    // Floating bubble (连接后显示的悬浮球)
+    // Floating bubble
     private var floatingBubble: View? = null
     private var isMenuVisible = false
 
@@ -82,13 +77,16 @@ class MainActivity : AppCompatActivity() {
     private val discoveredHosts = mutableListOf<DiscoveryClient.DiscoveredHost>()
     private lateinit var deviceAdapter: ArrayAdapter<String>
 
-    // Current mode: "wifi", "usb", "wireless"
+    // IP spinner adapter
+    private lateinit var ipSpinnerAdapter: ArrayAdapter<String>
+    private val ipList = mutableListOf<String>()
+
+    // Current mode: "wifi", "usb"
     private var currentMode = "wifi"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 全屏沉浸式
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility = (
@@ -99,7 +97,6 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
-        // 检测屏幕尺寸
         val display = windowManager.defaultDisplay
         val metrics = android.util.DisplayMetrics()
         if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -109,16 +106,15 @@ class MainActivity : AppCompatActivity() {
         }
         screenWidthPx = metrics.widthPixels
         screenHeightPx = metrics.heightPixels
-        // 自动设置分辨率匹配屏幕比例
         val ratio = screenWidthPx.toFloat() / screenHeightPx.toFloat()
-        if (ratio > 1.0f) { // 横屏
+        if (ratio > 1.0f) {
             currentSettings = StreamSettings(
                 width = 1920,
                 height = (1920 / ratio).toInt().coerceAtMost(1920),
                 fps = 60,
                 qualityMultiplier = 1.0f
             )
-        } else { // 竖屏
+        } else {
             currentSettings = StreamSettings(
                 width = (1080 * ratio).toInt().coerceAtLeast(640),
                 height = 1080,
@@ -145,19 +141,17 @@ class MainActivity : AppCompatActivity() {
 
         tabWifi = findViewById(R.id.tabWifi)
         tabUsb = findViewById(R.id.tabUsb)
-        tabWireless = findViewById(R.id.tabWireless)
         panelWifi = findViewById(R.id.panelWifi)
         panelUsb = findViewById(R.id.panelUsb)
-        panelWireless = findViewById(R.id.panelWireless)
 
         deviceList = findViewById(R.id.deviceList)
         noDevices = findViewById(R.id.noDevices)
         ipInput = findViewById(R.id.ipInput)
         portInput = findViewById(R.id.portInput)
         connectBtn = findViewById(R.id.connectBtn)
+        ipSpinner = findViewById(R.id.ipSpinner)
 
         connectUsbBtn = findViewById(R.id.connectUsbBtn)
-        connectWirelessBtn = findViewById(R.id.connectWirelessBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
 
         statsFps = findViewById(R.id.statsFps)
@@ -171,10 +165,43 @@ class MainActivity : AppCompatActivity() {
         deviceList.setOnItemClickListener { _, _, position, _ ->
             if (position < discoveredHosts.size) {
                 val host = discoveredHosts[position]
-                ipInput.setText(host.primaryIp)
-                portInput.setText(host.port.toString())
+                showIpDropdown(host.ips, host.port)
             }
         }
+
+        // IP 下拉选择适配器
+        ipSpinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, ipList)
+        ipSpinner.adapter = ipSpinnerAdapter
+        ipSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position < ipList.size) {
+                    ipInput.setText(ipList[position])
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    /**
+     * 显示 IP 下拉选择框
+     * IPv4 排前面，IPv6 排后面
+     */
+    private fun showIpDropdown(ips: List<String>, port: Int) {
+        ipList.clear()
+
+        // 分离 IPv4 和 IPv6，IPv4 在前
+        val ipv4 = ips.filter { !it.contains(":") }
+        val ipv6 = ips.filter { it.contains(":") }
+        ipList.addAll(ipv4)
+        ipList.addAll(ipv6)
+
+        if (ipList.isNotEmpty()) {
+            ipInput.setText(ipList[0])
+            portInput.setText(port.toString())
+        }
+
+        ipSpinnerAdapter.notifyDataSetChanged()
+        ipSpinner.visibility = if (ipList.size > 1) View.VISIBLE else View.GONE
     }
 
     // ==================== 模式切换 ====================
@@ -184,40 +211,33 @@ class MainActivity : AppCompatActivity() {
             when (view.id) {
                 R.id.tabWifi -> switchMode("wifi")
                 R.id.tabUsb -> switchMode("usb")
-                R.id.tabWireless -> switchMode("wireless")
             }
         }
         tabWifi.setOnClickListener(tabClick)
         tabUsb.setOnClickListener(tabClick)
-        tabWireless.setOnClickListener(tabClick)
     }
 
     private fun switchMode(mode: String) {
         currentMode = mode
 
-        // 重置所有标签样式
         val inactiveColor = "#AAAAAA"
         val activeColor = "#FFFFFF"
         val activeBg = "#FF6200EE"
         val inactiveBg = "#333333"
 
-        listOf(tabWifi, tabUsb, tabWireless).forEach {
+        listOf(tabWifi, tabUsb).forEach {
             it.setTextColor(android.graphics.Color.parseColor(inactiveColor))
             it.setBackgroundColor(android.graphics.Color.parseColor(inactiveBg))
         }
 
-        // 隐藏所有面板
         panelWifi.visibility = View.GONE
         panelUsb.visibility = View.GONE
-        panelWireless.visibility = View.GONE
 
-        // 激活选中标签和面板
         when (mode) {
             "wifi" -> {
                 tabWifi.setTextColor(android.graphics.Color.parseColor(activeColor))
                 tabWifi.setBackgroundColor(android.graphics.Color.parseColor(activeBg))
                 panelWifi.visibility = View.VISIBLE
-                // 手动触发一次扫描
                 discoveryClient?.requestDiscovery()
             }
             "usb" -> {
@@ -225,18 +245,12 @@ class MainActivity : AppCompatActivity() {
                 tabUsb.setBackgroundColor(android.graphics.Color.parseColor(activeBg))
                 panelUsb.visibility = View.VISIBLE
             }
-            "wireless" -> {
-                tabWireless.setTextColor(android.graphics.Color.parseColor(activeColor))
-                tabWireless.setBackgroundColor(android.graphics.Color.parseColor(activeBg))
-                panelWireless.visibility = View.VISIBLE
-            }
         }
     }
 
     // ==================== 按钮事件 ====================
 
     private fun setupButtons() {
-        // WiFi 连接
         connectBtn.setOnClickListener {
             val host = ipInput.text.toString().trim()
             val port = portInput.text.toString().trim().toIntOrNull() ?: 4747
@@ -247,38 +261,32 @@ class MainActivity : AppCompatActivity() {
             connect(host, port)
         }
 
-        // USB 连接
         connectUsbBtn.setOnClickListener {
             val port = portInput.text.toString().trim().toIntOrNull() ?: 4747
             connect("127.0.0.1", port)
         }
 
-        // 无线 ADB 连接
-        connectWirelessBtn.setOnClickListener {
-            val port = portInput.text.toString().trim().toIntOrNull() ?: 4747
-            connect("127.0.0.1", port)
-        }
-
-        // 设置
         settingsBtn.setOnClickListener {
             if (!isConnected) {
-                val dialog = SettingsDialog(this, currentSettings) { newSettings ->
-                    currentSettings = newSettings
-                }
-                dialog.show()
+                showSettingsDialog()
             }
         }
 
-        // 断开
         disconnectBtn.setOnClickListener {
             disconnect()
         }
     }
 
+    private fun showSettingsDialog() {
+        val dialog = SettingsDialog(this, currentSettings) { newSettings ->
+            currentSettings = newSettings
+        }
+        dialog.show()
+    }
+
     // ==================== 悬浮球菜单 ====================
 
     private fun setupFloatingBubble() {
-        // 悬浮球 - 使用 ImageView 或通过代码创建
         val bubble = ImageButton(this)
         bubble.setImageResource(android.R.drawable.ic_menu_more)
         bubble.setBackgroundColor(android.graphics.Color.parseColor("#88000000"))
@@ -311,28 +319,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFloatingMenu() {
-        // 创建菜单面板（可复用现有设置对话框的逻辑）
         val menuItems = listOf(
             "画质设置" to {
                 val dialog = SettingsDialog(this, currentSettings) { s ->
                     currentSettings = s
-                    // 重新连接以应用新画质设置
                     reconnect()
                 }
                 dialog.show()
                 isMenuVisible = false
-            },
-            "切换模式" to {
-                // 切换镜像/扩展模式 - 通过重新连接发送新参数
-                val current = currentSettings
-                currentSettings = current.copy(
-                    displayMode = if (current.displayMode == 0) 1 else 0
-                )
-                Toast.makeText(this,
-                    if (currentSettings.displayMode == 0) "镜像模式" else "扩展模式",
-                    Toast.LENGTH_SHORT).show()
-                // 重新连接以应用新设置
-                reconnect()
             },
             "编码器: ${if (currentSettings.useHardwareEncoder) "硬件" else "软件"}" to {
                 currentSettings = currentSettings.copy(
@@ -346,7 +340,6 @@ class MainActivity : AppCompatActivity() {
             "断开连接" to { disconnect() }
         )
 
-        // 用 PopupMenu 或自定义面板
         val popup = PopupMenu(this, floatingBubble)
         menuItems.forEach { (label, _) -> popup.menu.add(label) }
         popup.setOnMenuItemClickListener { item ->
@@ -369,7 +362,6 @@ class MainActivity : AppCompatActivity() {
         val host = connectedHost
         val port = connectedPort
         disconnect()
-        // 短暂延迟后重新连接以应用新设置
         mainHandler.postDelayed({ connect(host, port) }, 500)
     }
 
@@ -406,8 +398,10 @@ class MainActivity : AppCompatActivity() {
         } else {
             noDevices.visibility = View.GONE
             for (d in devices) {
-                val ips = d.ips.joinToString(", ")
-                deviceAdapter.add("${d.label}\n  $ips:${d.port}")
+                val ipv4 = d.ips.filter { !it.contains(":") }
+                val ipv6 = d.ips.filter { it.contains(":") }
+                val ipSummary = if (ipv4.isNotEmpty()) ipv4[0] else (ipv6.firstOrNull() ?: "?")
+                deviceAdapter.add("${d.label}\n  $ipSummary:${d.port}")
             }
         }
         deviceAdapter.notifyDataSetChanged()
@@ -556,11 +550,12 @@ class MainActivity : AppCompatActivity() {
         }
         mainHandler.post(statsUpdateRunnable!!)
 
+        // 延迟 ping 改为每 2 秒一次
         pingRunnable = object : Runnable {
             override fun run() {
                 if (isConnected) {
                     streamClient?.sendPing()
-                    mainHandler.postDelayed(this, 3000)
+                    mainHandler.postDelayed(this, 2000)
                 }
             }
         }
@@ -604,7 +599,6 @@ class MainActivity : AppCompatActivity() {
     private fun calculateBitrate(width: Int, height: Int, fps: Int, quality: Float): Int {
         val baseKbps = 10000
         val pixelRatio = (width * height).toFloat() / (1920 * 1080)
-        // fps=0 means unlimited; use 144 as the effective fps for bitrate calculation
         val effectiveFps = if (fps == 0) 144 else fps
         val fpsRatio = effectiveFps.toFloat() / 60f
         return (baseKbps * pixelRatio * fpsRatio * quality).toInt()

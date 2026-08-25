@@ -71,6 +71,8 @@ class StreamClient(
     private var running = false
     private var pingId = 0
     private var lastPingTimeNs = 0L
+    // 存储每个 ping ID 的发送时间，用于匹配 pong
+    private val pingTimestamps = java.util.concurrent.ConcurrentHashMap<Int, Long>()
     private var totalBytesReceived = 0L
     private var lastBitrateTime = 0L
     private var bitrateBytes = 0L
@@ -230,8 +232,15 @@ class StreamClient(
                 "pong" -> {
                     val id = json.optInt("id")
                     val nowNs = System.nanoTime()
-                    val latencyMs = (nowNs - lastPingTimeNs) / 1_000_000L
-                    callback.onLatencyMeasured(latencyMs)
+                    val sentNs = pingTimestamps.remove(id)
+                    if (sentNs != null) {
+                        val latencyMs = (nowNs - sentNs) / 1_000_000L
+                        callback.onLatencyMeasured(latencyMs)
+                    } else {
+                        // 回退：使用 lastPingTimeNs
+                        val latencyMs = (nowNs - lastPingTimeNs) / 1_000_000L
+                        callback.onLatencyMeasured(latencyMs)
+                    }
                 }
                 "welcome" -> {
                     // Already handled in handshake
@@ -287,7 +296,14 @@ class StreamClient(
     fun sendPing() {
         if (!running) return
         pingId++
-        lastPingTimeNs = System.nanoTime()
+        val nowNs = System.nanoTime()
+        lastPingTimeNs = nowNs
+        pingTimestamps[pingId] = nowNs
+        // 清理过期的 ping 记录（保留最近 10 个）
+        if (pingTimestamps.size > 10) {
+            val oldest = pingTimestamps.keys.minOrNull() ?: return
+            pingTimestamps.keys.filter { it < oldest }.forEach { pingTimestamps.remove(it) }
+        }
         inputSender?.sendPing(pingId)
     }
 }

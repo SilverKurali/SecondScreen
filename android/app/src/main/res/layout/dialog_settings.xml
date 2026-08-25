@@ -4,7 +4,8 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="24dp"
-    android:minWidth="300dp">
+    android:minWidth="300dp"
+    android:background="#FF2D2D2D">
 
     <TextView
         android:layout_width="wrap_content"
@@ -26,7 +27,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="720p"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
 
         <RadioButton
             android:id="@+id/res1080p"
@@ -35,6 +37,7 @@
             android:layout_weight="1"
             android:text="1080p"
             android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE"
             android:checked="true" />
 
         <RadioButton
@@ -43,7 +46,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="2K"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
     </RadioGroup>
 
     <TextView
@@ -68,6 +72,7 @@
             android:layout_weight="1"
             android:text="60"
             android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE"
             android:checked="true" />
 
         <RadioButton
@@ -76,7 +81,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="90"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
 
         <RadioButton
             android:id="@+id/fps120"
@@ -84,7 +90,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="120"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
 
         <RadioButton
             android:id="@+id/fps144"
@@ -92,7 +99,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="144"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
 
         <RadioButton
             android:id="@+id/fpsUnlimited"
@@ -100,7 +108,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="∞"
-            android:textColor="@android:color/white" />
+            android:textColor="@android:color/white"
+            android:buttonTint="#FF6200EE" />
     </RadioGroup>
 
     <TextView
@@ -117,7 +126,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:max="10"
-        android:progress="5" />
+        android:progress="5"
+        android:progressTint="#FF6200EE"
+        android:thumbTint="#FF6200EE" />
 
     <TextView
         android:id="@+id/qualityLabel"

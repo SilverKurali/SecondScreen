@@ -42,7 +42,7 @@ class SettingsDialog(
     )
 
     fun show() {
-        val builder = AlertDialog.Builder(activity)
+        val builder = AlertDialog.Builder(activity, android.R.style.Theme_Material_Dialog_Alert)
         builder.setTitle("画质设置")
 
         val inflater = LayoutInflater.from(activity)

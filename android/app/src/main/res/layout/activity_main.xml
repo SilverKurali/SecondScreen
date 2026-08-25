@@ -71,17 +71,6 @@
                     android:textColor="#AAAAAA"
                     android:textSize="14sp"
                     android:padding="8dp" />
-
-                <TextView
-                    android:id="@+id/tabWireless"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="无线 ADB"
-                    android:textColor="#AAAAAA"
-                    android:textSize="14sp"
-                    android:padding="8dp" />
             </LinearLayout>
 
             <!-- ====== WiFi 面板 ====== -->
@@ -127,13 +116,23 @@
                     android:textSize="14sp"
                     android:layout_marginTop="12dp" />
 
+                <!-- IP 下拉选择框（点击发现的主机后显示） -->
+                <Spinner
+                    android:id="@+id/ipSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="#333333"
+                    android:visibility="gone"
+                    android:layout_marginBottom="8dp"
+                    android:padding="12dp"
+                    android:popupBackground="#444444" />
+
                 <EditText
                     android:id="@+id/ipInput"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="主机 IP"
-                    android:inputType="number|numberDecimal|text"
-                    android:text="192.168.1.100"
+                    android:inputType="text"
                     android:textColor="@android:color/white"
                     android:textColorHint="#666666"
                     android:background="#333333"
@@ -205,49 +204,6 @@
                     android:backgroundTint="#FF6200EE" />
             </LinearLayout>
 
-            <!-- ====== 无线 ADB 面板 ====== -->
-            <LinearLayout
-                android:id="@+id/panelWireless"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone"
-                android:paddingTop="16dp"
-                android:gravity="center">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="无线 ADB 连接"
-                    android:textColor="#FFFFFF"
-                    android:textSize="18sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="通过 WiFi ADB 调试桥连接"
-                    android:textColor="#AAAAAA"
-                    android:textSize="14sp"
-                    android:layout_marginBottom="16dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="要求：\n1. PC 与手机在同一局域网\n2. 已建立无线 ADB 连接\n  (adb connect 手机IP:5555)\n3. PC 端已设置 ADB 反向隧道\n  (adb reverse tcp:4747 tcp:4747)"
-                    android:textColor="#888888"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="4dp"
-                    android:layout_marginBottom="16dp" />
-
-                <Button
-                    android:id="@+id/connectWirelessBtn"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="无线 ADB 连接 (127.0.0.1)"
-                    android:backgroundTint="#FF3700B3" />
-            </LinearLayout>
-
             <!-- 设置按钮 -->
             <Button
                 android:id="@+id/settingsBtn"
@@ -261,7 +217,7 @@
                 android:id="@+id/versionInfo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="SecondScreen v0.2.0"
+                android:text="SecondScreen v0.4.0"
                 android:textColor="#555555"
                 android:textSize="12sp"
                 android:layout_marginTop="12dp" />
@@ -293,7 +249,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="延迟: 0ms"
+            android:text="延迟: --ms"
             android:textColor="@android:color/white"
             android:textSize="12sp" />
 
