@@ -193,34 +193,6 @@ class InputInjector:
                     env=self._env,
                 )
 
-    def mouse_move_relative(self, dx, dy):
-        """Move mouse by relative delta (trackpad mode)."""
-        dx, dy = int(dx), int(dy)
-        self._cur_x += dx
-        self._cur_y += dy
-
-        if self._ui:
-            try:
-                import evdev
-                from evdev import ecodes
-                with self._lock:
-                    self._ui.write(ecodes.EV_REL, REL_X, dx)
-                    self._ui.write(ecodes.EV_REL, REL_Y, dy)
-                    self._ui.syn()
-            except Exception as e:
-                logger.debug("uinput relative move error: %s", e)
-        elif self._is_wayland and _check_cmd("ydotool"):
-            subprocess.run(
-                ["ydotool", "mousemove", str(dx), str(dy)],
-                capture_output=True, text=True, timeout=2,
-            )
-        elif _check_cmd("xdotool"):
-            subprocess.run(
-                ["xdotool", "mousemove", "--relative", str(dx), str(dy)],
-                capture_output=True, text=True, timeout=2,
-                env=self._env,
-            )
-
     def mouse_button(self, btn, state):
         """Press or release a mouse button.
 

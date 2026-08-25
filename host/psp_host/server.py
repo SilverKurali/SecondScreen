@@ -429,18 +429,12 @@ class Session:
                 y = msg.get("y", 0.5) * self._args.height
                 self._injector.mouse_move(x, y)
 
-            elif kind == "rmove":
-                dx = msg.get("dx", 0)
-                dy = msg.get("dy", 0)
-                self._injector.mouse_move_relative(dx, dy)
-
             elif kind == "btn":
                 btn = msg.get("btn", 1)
                 state = msg.get("state", 1)
-                if msg.get("mode", 0) == 0:
-                    x = msg.get("x", 0.5) * self._args.width
-                    y = msg.get("y", 0.5) * self._args.height
-                    self._injector.mouse_move(x, y)
+                x = msg.get("x", 0.5) * self._args.width
+                y = msg.get("y", 0.5) * self._args.height
+                self._injector.mouse_move(x, y)
                 self._injector.mouse_button(btn, state)
 
             elif kind == "wheel":

@@ -63,29 +63,13 @@ class InputSender(private val outputStream: OutputStream) {
     }
 
     /**
-     * Send a relative mouse move (trackpad mode).
-     * @param dx Delta X in pixels
-     * @param dy Delta Y in pixels
-     */
-    fun sendRelativeMove(dx: Float, dy: Float) {
-        val msg = JSONObject().apply {
-            put("type", "input")
-            put("kind", "rmove")
-            put("dx", dx.toDouble())
-            put("dy", dy.toDouble())
-        }
-        sendControl(msg)
-    }
-
-    /**
      * Send a mouse button event.
      * @param x Normalized X
      * @param y Normalized Y
      * @param btn Button ID: 1=left, 2=right, 3=middle
      * @param state 1=pressed, 0=released
-     * @param mode Touch mode: 0=direct, 1=trackpad
      */
-    fun sendButton(x: Float, y: Float, btn: Int, state: Int, mode: Int = 0) {
+    fun sendButton(x: Float, y: Float, btn: Int, state: Int) {
         val msg = JSONObject().apply {
             put("type", "input")
             put("kind", "btn")
@@ -93,7 +77,6 @@ class InputSender(private val outputStream: OutputStream) {
             put("y", y.toDouble())
             put("btn", btn)
             put("state", state)
-            put("mode", mode)
         }
         sendControl(msg)
     }
