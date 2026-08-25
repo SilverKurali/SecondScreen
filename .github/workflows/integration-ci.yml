@@ -131,23 +131,20 @@ jobs:
           PYTHONPATH=. python -m psp_host --list-outputs 2>&1 || true
           PYTHONPATH=. python -m psp_host --list-devices 2>&1 || true
 
-      - name: GUI 模块导入冒烟 (Linux offscreen)
+      - name: GUI 模块导入冒烟 (Linux, xvfb)
         if: runner.os == 'Linux'
         env:
-          GDK_BACKEND: ""
           GSK_RENDERER: gl
         run: |
           cd host
-          PYTHONPATH=. python - <<'PY'
+          PYTHONPATH=. xvfb-run -a python - <<'PY'
           import gi
           gi.require_version("Gtk","4.0"); gi.require_version("GLib","2.0")
           from gi.repository import Gtk, GLib, Gio
           from psp_host import gui
           assert hasattr(gui, "run_gui")
-          # 构造 Application + Window（不进入主循环）
           app = gui.PSPHostApp()
           win = gui.PSPHostWindow(app)
-          # 触发若干方法确保无异常
           win.refresh_outputs()
           win.refresh_status()
           win.refresh_display_list()
