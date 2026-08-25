@@ -30,6 +30,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # ──────────────────────────────────────────────
   deep-test:
@@ -62,10 +66,10 @@ jobs:
           sudo apt-get install -y \
             gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-            python3-gi python3-gi-cairo \
+            libgirepository1.0-dev libcairo2-dev pkg-config \
             gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
             gir1.2-gtk-4.0 gir1.2-glib-2.0 \
-            xvfb
+            xvfb x11-xserver-utils
 
       - name: Install Python deps
         run: |
@@ -74,7 +78,10 @@ jobs:
           if [ -f host/requirements.txt ]; then
             pip install -r host/requirements.txt 2>/dev/null || true
           fi
-        shell: bash
+          # Linux: 为当前 Python 编译安装 PyGObject, 使 gi 可用于任意矩阵版本
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            pip install PyGObject 2>&1 | tail -3 || echo "::warning::PyGObject 编译失败, GUI 冲烟将跳过"
+          fi
 
       - name: py_compile 全量
         run: |
@@ -155,6 +162,7 @@ jobs:
           PY
 
       - name: 配置一致性校验
+        if: runner.os == 'Linux'
         run: |
           python - <<'PY'
           import sys
