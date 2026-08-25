@@ -11,8 +11,8 @@ android {
         applicationId = "com.psp.app"
         minSdk = 26  // Android 8.0+ for low-latency MediaCodec features
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.3.0"
+        versionCode = 2
+        versionName = "0.4.0"
 
         // Only ARM devices (Android phones/tablets/TVs)
         ndk {
