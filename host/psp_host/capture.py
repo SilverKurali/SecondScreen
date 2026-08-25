@@ -244,8 +244,8 @@ def _build_wayland_source(args):
 
     node_id = screencast._node_id
     if node_id is None:
-        logger.info("Creating Portal ScreenCast session ...")
-        node_id = screencast.create_screencast_session(
+        logger.info("Creating Portal ScreenCast session (first connection) ...")
+        node_id = screencast.ensure_screencast_session(
             width=args.width, height=args.height
         )
 

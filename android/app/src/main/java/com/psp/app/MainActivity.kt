@@ -84,6 +84,16 @@ class MainActivity : AppCompatActivity() {
     // Current mode: "wifi", "usb"
     private var currentMode = "wifi"
 
+    // Touch mode: 0=direct (直接点击), 1=trackpad (触控板)
+    private var touchMode = 0
+    private var longPressRunnable: Runnable? = null
+    private var isLongPress = false
+    private val LONG_PRESS_MS = 500L
+    // Trackpad state
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
+    private val TRACKPAD_SENSITIVITY = 1.8f
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -319,7 +329,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showFloatingMenu() {
+        val touchModeLabel = if (touchMode == 0) "触摸模式: 直接触摸" else "触摸模式: 触控板"
         val menuItems = listOf(
+            touchModeLabel to {
+                touchMode = if (touchMode == 0) 1 else 0
+                Toast.makeText(this,
+                    if (touchMode == 0) "直接触摸模式" else "触控板模式",
+                    Toast.LENGTH_SHORT).show()
+                isMenuVisible = false
+            },
             "画质设置" to {
                 val dialog = SettingsDialog(this, currentSettings) { s ->
                     currentSettings = s
@@ -420,28 +438,75 @@ class MainActivity : AppCompatActivity() {
             val height = surfaceView.height.toFloat()
             if (width <= 0 || height <= 0) return@setOnTouchListener true
 
-            val nx = (event.x / width).coerceIn(0f, 1f)
-            val ny = (event.y / height).coerceIn(0f, 1f)
+            if (touchMode == 0) {
+                // ========== 直接触摸模式 ==========
+                val nx = (event.x / width).coerceIn(0f, 1f)
+                val ny = (event.y / height).coerceIn(0f, 1f)
 
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    touchDown = true
-                    inputSender.sendButton(nx, ny, 1, 1)
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (touchDown) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchDown = true
+                        isLongPress = false
                         inputSender.sendMove(nx, ny)
+                        // 启动长按检测
+                        longPressRunnable = Runnable {
+                            if (touchDown) {
+                                isLongPress = true
+                                inputSender.sendButton(nx, ny, 2, 1, 0)  // 右键按下
+                            }
+                        }
+                        mainHandler.postDelayed(longPressRunnable!!, LONG_PRESS_MS)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (touchDown) inputSender.sendMove(nx, ny)
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        // 取消长按检测
+                        longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                        if (isLongPress) {
+                            inputSender.sendButton(nx, ny, 2, 0, 0)  // 右键释放
+                        } else {
+                            inputSender.sendButton(nx, ny, 1, 1, 0)  // 左键按下
+                            inputSender.sendButton(nx, ny, 1, 0, 0)  // 左键释放
+                        }
+                        touchDown = false
+                        isLongPress = false
+                    }
+                    MotionEvent.ACTION_SCROLL -> {
+                        inputSender.sendWheel(
+                            event.getAxisValue(MotionEvent.AXIS_HSCROLL),
+                            event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                        )
                     }
                 }
-                MotionEvent.ACTION_UP -> {
-                    touchDown = false
-                    inputSender.sendButton(nx, ny, 1, 0)
-                }
-                MotionEvent.ACTION_SCROLL -> {
-                    inputSender.sendWheel(
-                        event.getAxisValue(MotionEvent.AXIS_HSCROLL),
-                        event.getAxisValue(MotionEvent.AXIS_VSCROLL)
-                    )
+            } else {
+                // ========== 触控板模式 (相对移动) ==========
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchDown = true
+                        lastTouchX = event.x
+                        lastTouchY = event.y
+                        inputSender.sendButton(0f, 0f, 1, 1, 1)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (touchDown) {
+                            val dx = (event.x - lastTouchX) * TRACKPAD_SENSITIVITY
+                            val dy = (event.y - lastTouchY) * TRACKPAD_SENSITIVITY
+                            inputSender.sendRelativeMove(dx, dy)
+                            lastTouchX = event.x
+                            lastTouchY = event.y
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        touchDown = false
+                        inputSender.sendButton(0f, 0f, 1, 0, 1)
+                    }
+                    MotionEvent.ACTION_SCROLL -> {
+                        inputSender.sendWheel(
+                            event.getAxisValue(MotionEvent.AXIS_HSCROLL),
+                            event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                        )
+                    }
                 }
             }
             return@setOnTouchListener true

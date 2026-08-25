@@ -1,20 +1,28 @@
-"""Linux input injection via XTest (X11) and ydotool (Wayland).
+"""Linux input injection via evdev uinput + hyprctl.
 
-Auto-detects the display server and uses the appropriate method:
-- X11: xdotool (XTest extension)
-- Wayland: ydotool (uinput device)
+Uses python-evdev to create a virtual mouse device for button/scroll events.
+Uses hyprctl dispatch movecursor for absolute positioning (works with multi-monitor).
+Falls back to xdotool for X11.
 """
 
 import logging
 import os
+import re
 import subprocess
+import threading
 
 logger = logging.getLogger(__name__)
 
-# Button code mapping (X11 buttons)
-BUTTON_X11 = {"1": 1, "2": 3, "3": 2}  # client btn→X11 btn
-# ydotool button codes (from linux/input-event-codes.h)
-BUTTON_YDO = {1: 272, 2: 273, 3: 274}  # left, right, middle
+# Linux input event codes (from linux/input-event-codes.h)
+BTN_LEFT = 0x110      # 272
+BTN_RIGHT = 0x111     # 273
+BTN_MIDDLE = 0x112    # 274
+REL_X = 0x00
+REL_Y = 0x01
+REL_WHEEL = 0x08
+REL_HWHEEL = 0x06
+
+BUTTON_MAP = {1: BTN_LEFT, 2: BTN_RIGHT, 3: BTN_MIDDLE}
 
 
 def _is_wayland():
@@ -33,75 +41,185 @@ def _check_cmd(name):
 
 
 class InputInjector:
-    """Inject mouse/keyboard events.
+    """Inject mouse events using evdev uinput + hyprctl.
 
-    Auto-detects X11 vs Wayland and uses the appropriate tool.
+    Creates a virtual mouse device for button press/release and scroll.
+    Uses hyprctl for absolute cursor positioning on multi-monitor Wayland.
     """
 
-    def __init__(self, screen_width=1920, screen_height=1080, display=":0"):
+    def __init__(self, screen_width=1920, screen_height=1080, display=":0", output_name=None):
         self._screen_w = screen_width
         self._screen_h = screen_height
         self._display = display
         self._env = {"DISPLAY": display}
         self._is_wayland = _is_wayland()
+        self._offset_x = 0
+        self._offset_y = 0
+        self._cur_x = 0
+        self._cur_y = 0
+        self._ui = None  # evdev UInput device
+        self._lock = threading.Lock()
 
-        # Detect available tools
-        self._xdotool = _check_cmd("xdotool")
-        self._ydotool = _check_cmd("ydotool")
+        # Detect monitor offset for multi-monitor setups
+        if output_name:
+            self._detect_monitor_offset(output_name)
 
-        if self._is_wayland:
-            if self._ydotool:
-                logger.info("Input injection: ydotool (Wayland)")
-            else:
+        # Initialize evdev uinput for button/scroll events
+        self._init_uinput()
+
+        # Get initial cursor position
+        if _check_cmd("hyprctl"):
+            try:
+                result = subprocess.run(["hyprctl", "cursorpos"], capture_output=True, text=True, timeout=2)
+                parts = result.stdout.strip().split(",")
+                self._cur_x = int(parts[0].strip())
+                self._cur_y = int(parts[1].strip())
+                logger.info("Initial cursor pos: (%d, %d)", self._cur_x, self._cur_y)
+            except Exception:
+                pass
+
+        if self._ui:
+            logger.info("Input injection: evdev uinput + hyprctl offset=(%d,%d)",
+                        self._offset_x, self._offset_y)
+        elif self._is_wayland and _check_cmd("ydotool"):
+            logger.info("Input injection: ydotool fallback offset=(%d,%d)",
+                        self._offset_x, self._offset_y)
+        else:
+            if self._is_wayland:
                 logger.warning(
-                    "ydotool not found. Install: sudo apt install ydotool\n"
+                    "No input injection available. Install python-evdev:\n"
+                    "  pip3 install evdev\n"
                     "  Then add yourself to the 'input' group and reboot:\n"
                     "  sudo usermod -aG input $USER"
                 )
-        else:
-            if self._xdotool:
-                logger.info("Input injection: xdotool (X11)")
             else:
-                logger.warning(
-                    "xdotool not found. Install: sudo apt install xdotool"
+                if _check_cmd("xdotool"):
+                    logger.info("Input injection: xdotool (X11) offset=(%d,%d)",
+                                self._offset_x, self._offset_y)
+                else:
+                    logger.warning("xdotool not found. Install: sudo apt install xdotool")
+
+    def _init_uinput(self):
+        """Create a virtual mouse device using evdev UInput."""
+        try:
+            import evdev
+            from evdev import ecodes
+
+            # Define virtual mouse capabilities
+            cap = {
+                ecodes.EV_KEY: [BTN_LEFT, BTN_RIGHT, BTN_MIDDLE],
+                ecodes.EV_REL: [REL_X, REL_Y, REL_WHEEL, REL_HWHEEL],
+            }
+
+            self._ui = evdev.UInput(cap, name="PSP Virtual Mouse", vendor=0x1234, product=0x5678)
+            logger.info("evdev uinput device created: PSP Virtual Mouse")
+
+        except ImportError:
+            logger.warning("python-evdev not installed. Button/scroll won't work.")
+            self._ui = None
+        except PermissionError:
+            logger.warning(
+                "Permission denied for uinput. Add yourself to 'input' group:\n"
+                "  sudo usermod -aG input $USER\n"
+                "  Then reboot."
+            )
+            self._ui = None
+        except Exception as e:
+            logger.warning("Failed to create uinput device: %s", e)
+            self._ui = None
+
+    def _detect_monitor_offset(self, output_name):
+        """Detect the monitor's position offset using hyprctl/xrandr."""
+        if self._is_wayland and _check_cmd("hyprctl"):
+            try:
+                result = subprocess.run(
+                    ["hyprctl", "monitors"], capture_output=True, text=True, timeout=3
                 )
+                lines = result.stdout.splitlines()
+                for i, line in enumerate(lines):
+                    if output_name in line and "Monitor" in line:
+                        for j in range(i + 1, min(i + 5, len(lines))):
+                            if "at " in lines[j]:
+                                m = re.search(r"at (\d+)x(\d+)", lines[j])
+                                if m:
+                                    self._offset_x = int(m.group(1))
+                                    self._offset_y = int(m.group(2))
+                                    logger.info("Monitor %s offset: (%d, %d)",
+                                                output_name, self._offset_x, self._offset_y)
+                                return
+            except Exception as e:
+                logger.warning("Failed to detect monitor offset via hyprctl: %s", e)
 
-    def _run_xdotool(self, *args):
-        """Run xdotool with args."""
-        if not self._xdotool:
-            return
-        try:
-            subprocess.run(
-                ["xdotool"] + list(args),
-                capture_output=True, text=True, timeout=2,
-                env=self._env,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.debug("xdotool error: %s", e)
-
-    def _run_ydotool(self, *args):
-        """Run ydotool with args."""
-        if not self._ydotool:
-            return
-        try:
-            subprocess.run(
-                ["ydotool"] + list(args),
-                capture_output=True, text=True, timeout=2,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.debug("ydotool error: %s", e)
+        if _check_cmd("xrandr"):
+            try:
+                result = subprocess.run(
+                    ["xrandr", "--query"], capture_output=True, text=True, timeout=3,
+                    env=self._env,
+                )
+                for line in result.stdout.splitlines():
+                    if output_name in line and " connected" in line:
+                        m = re.search(r"(\d+)x(\d+)\+(\d+)\+(\d+)", line)
+                        if m:
+                            self._offset_x = int(m.group(3))
+                            self._offset_y = int(m.group(4))
+                            logger.info("Monitor %s offset: (%d, %d)",
+                                        output_name, self._offset_x, self._offset_y)
+                        return
+            except Exception as e:
+                logger.warning("Failed to detect monitor offset via xrandr: %s", e)
 
     def mouse_move(self, x, y):
         """Move mouse to absolute screen coordinates."""
+        target_x = int(x + self._offset_x)
+        target_y = int(y + self._offset_y)
+        self._cur_x = target_x
+        self._cur_y = target_y
+
         if self._is_wayland:
-            # ydotool uses absolute coordinates via uinput
-            # Format: ydotool mousemove --absolute X Y
-            self._run_ydotool(
-                "mousemove", "--absolute",
-                str(int(x)), str(int(y)),
-            )
+            if _check_cmd("hyprctl"):
+                subprocess.run(
+                    ["hyprctl", "dispatch", "movecursor", str(target_x), str(target_y)],
+                    capture_output=True, text=True, timeout=1,
+                )
+            elif self._ui:
+                # Fallback: use relative moves through uinput
+                # This won't work well for absolute positioning, but better than nothing
+                pass
         else:
-            self._run_xdotool("mousemove", "--screen", "0", str(int(x)), str(int(y)))
+            if _check_cmd("xdotool"):
+                subprocess.run(
+                    ["xdotool", "mousemove", "--screen", "0", str(target_x), str(target_y)],
+                    capture_output=True, text=True, timeout=2,
+                    env=self._env,
+                )
+
+    def mouse_move_relative(self, dx, dy):
+        """Move mouse by relative delta (trackpad mode)."""
+        dx, dy = int(dx), int(dy)
+        self._cur_x += dx
+        self._cur_y += dy
+
+        if self._ui:
+            try:
+                import evdev
+                from evdev import ecodes
+                with self._lock:
+                    self._ui.write(ecodes.EV_REL, REL_X, dx)
+                    self._ui.write(ecodes.EV_REL, REL_Y, dy)
+                    self._ui.syn()
+            except Exception as e:
+                logger.debug("uinput relative move error: %s", e)
+        elif self._is_wayland and _check_cmd("ydotool"):
+            subprocess.run(
+                ["ydotool", "mousemove", str(dx), str(dy)],
+                capture_output=True, text=True, timeout=2,
+            )
+        elif _check_cmd("xdotool"):
+            subprocess.run(
+                ["xdotool", "mousemove", "--relative", str(dx), str(dy)],
+                capture_output=True, text=True, timeout=2,
+                env=self._env,
+            )
 
     def mouse_button(self, btn, state):
         """Press or release a mouse button.
@@ -110,40 +228,85 @@ class InputInjector:
             btn: Button number (1=left, 2=right, 3=middle).
             state: 1=press, 0=release.
         """
-        if self._is_wayland:
-            # ydotool: click CODE
-            code = BUTTON_YDO.get(btn, 272)
+        code = BUTTON_MAP.get(btn, BTN_LEFT)
+
+        if self._ui:
+            try:
+                import evdev
+                from evdev import ecodes
+                with self._lock:
+                    self._ui.write(ecodes.EV_KEY, code, state)
+                    self._ui.syn()
+                logger.debug("uinput button: code=%d state=%d", code, state)
+            except Exception as e:
+                logger.debug("uinput button error: %s", e)
+        elif self._is_wayland and _check_cmd("ydotool"):
+            # ydotool doesn't support --down/--up, so we do full click
             if state == 1:
-                self._run_ydotool("click", str(code))
-            # ydotool doesn't have separate up/down, click does down+up
-            # For drag, we need mousedown/mouseup
-            else:
-                self._run_ydotool("click", str(code))
-        else:
-            xbtn = BUTTON_X11.get(str(btn), btn)
+                subprocess.run(
+                    ["ydotool", "click", str(code)],
+                    capture_output=True, text=True, timeout=2,
+                )
+        elif _check_cmd("xdotool"):
             action = "mousedown" if state == 1 else "mouseup"
-            self._run_xdotool(action, str(xbtn))
+            xbtn = {1: "1", 2: "3", 3: "2"}.get(btn, "1")
+            subprocess.run(
+                ["xdotool", action, xbtn],
+                capture_output=True, text=True, timeout=2,
+                env=self._env,
+            )
 
     def mouse_wheel(self, dx, dy):
         """Scroll wheel. dy>0 = scroll up, dy<0 = scroll down."""
-        if self._is_wayland:
-            # ydotool: scroll --amount N
+        if self._ui:
+            try:
+                import evdev
+                from evdev import ecodes
+                with self._lock:
+                    if dy:
+                        self._ui.write(ecodes.EV_REL, REL_WHEEL, int(dy))
+                    if dx:
+                        self._ui.write(ecodes.EV_REL, REL_HWHEEL, int(dx))
+                    self._ui.syn()
+                logger.debug("uinput scroll: dx=%d dy=%d", dx, dy)
+            except Exception as e:
+                logger.debug("uinput scroll error: %s", e)
+        elif self._is_wayland and _check_cmd("ydotool"):
             if dy:
-                # ydotool uses positive = down, negative = up
-                self._run_ydotool("scroll", str(-int(dy)), "0")
+                subprocess.run(
+                    ["ydotool", "scroll", str(-int(dy)), "0"],
+                    capture_output=True, text=True, timeout=2,
+                )
             if dx:
-                self._run_ydotool("scroll", "0", str(int(dx)))
-        else:
+                subprocess.run(
+                    ["ydotool", "scroll", "0", str(int(dx))],
+                    capture_output=True, text=True, timeout=2,
+                )
+        elif _check_cmd("xdotool"):
             if dy > 0:
-                self._run_xdotool("click", "--repeat", str(int(dy)), "4")
+                subprocess.run(
+                    ["xdotool", "click", "--repeat", str(int(dy)), "4"],
+                    capture_output=True, text=True, timeout=2,
+                    env=self._env,
+                )
             elif dy < 0:
-                self._run_xdotool("click", "--repeat", str(int(-dy)), "5")
+                subprocess.run(
+                    ["xdotool", "click", "--repeat", str(int(-dy)), "5"],
+                    capture_output=True, text=True, timeout=2,
+                    env=self._env,
+                )
 
     def key_event(self, keycode, state):
         """Send a keyboard event. Not fully implemented."""
-        if self._is_wayland and self._ydotool:
-            action = "keydown" if state == 1 else "keyup"
-            self._run_ydotool(action, str(keycode))
+        if self._ui:
+            try:
+                import evdev
+                from evdev import ecodes
+                with self._lock:
+                    self._ui.write(ecodes.EV_KEY, keycode, state)
+                    self._ui.syn()
+            except Exception as e:
+                logger.debug("uinput key error: %s", e)
         logger.debug("Key event: code=%d state=%d", keycode, state)
 
     def set_screen_size(self, width, height):
@@ -152,5 +315,11 @@ class InputInjector:
         self._screen_h = height
 
     def close(self):
-        """Cleanup."""
-        pass
+        """Cleanup uinput device."""
+        if self._ui:
+            try:
+                self._ui.close()
+                logger.info("uinput device closed")
+            except Exception:
+                pass
+            self._ui = None

@@ -136,6 +136,7 @@ class Session:
                 screen_width=self._args.width,
                 screen_height=self._args.height,
                 display=self._args.display,
+                output_name=getattr(self._args, 'output', None),
             )
         elif system == "Windows":
             from .input_windows import InputInjector
@@ -194,7 +195,15 @@ class Session:
             self._appsink = sink
             sink.set_property("emit-signals", False)
 
-            self._pipe.set_state(Gst.State.PLAYING)
+            ret = self._pipe.set_state(Gst.State.PLAYING)
+            if ret == Gst.StateChangeReturn.FAILURE:
+                logger.error("Pipeline failed to start; invalidating screencast session")
+                try:
+                    from . import screencast
+                    screencast.invalidate_session()
+                except Exception:
+                    pass
+                return False
             logger.info("Pipeline started")
 
             # Start a thread to pull frames from appsink
@@ -411,24 +420,27 @@ class Session:
             return
 
         kind = msg.get("kind")
+        logger.debug("Input event: kind=%s msg=%s", kind, msg)
         try:
-            # Get display offset for EVDI virtual display positioning
-            offset_x = getattr(self, '_display_offset_x', 0)
-            offset_y = getattr(self, '_display_offset_y', 0)
+            # Offset is handled inside injector.mouse_move() automatically
 
             if kind == "move":
-                # Map normalized coordinates (0..1) to screen coords
-                x = msg.get("x", 0.5) * self._args.width + offset_x
-                y = msg.get("y", 0.5) * self._args.height + offset_y
+                x = msg.get("x", 0.5) * self._args.width
+                y = msg.get("y", 0.5) * self._args.height
                 self._injector.mouse_move(x, y)
 
+            elif kind == "rmove":
+                dx = msg.get("dx", 0)
+                dy = msg.get("dy", 0)
+                self._injector.mouse_move_relative(dx, dy)
+
             elif kind == "btn":
-                x = msg.get("x", 0.5) * self._args.width + offset_x
-                y = msg.get("y", 0.5) * self._args.height + offset_y
                 btn = msg.get("btn", 1)
                 state = msg.get("state", 1)
-                # Move to position first, then click
-                self._injector.mouse_move(x, y)
+                if msg.get("mode", 0) == 0:
+                    x = msg.get("x", 0.5) * self._args.width
+                    y = msg.get("y", 0.5) * self._args.height
+                    self._injector.mouse_move(x, y)
                 self._injector.mouse_button(btn, state)
 
             elif kind == "wheel":
@@ -450,7 +462,14 @@ class Session:
             logger.debug("Send control error: %s", e)
 
     def _cleanup(self):
-        """Stop pipeline, close socket, release resources."""
+        """Stop pipeline, close socket, release resources.
+
+        The ScreenCast session itself is intentionally kept alive across
+        disconnects: the cached PipeWire node is reused by the next connection
+        (see screencast.ensure_screencast_session) so the screen-selection
+        picker is not shown on every reconnect. Only the GStreamer pipeline is
+        torn down here; the session is released on server shutdown.
+        """
         self._running = False
         if self._pipe:
             try:
@@ -458,13 +477,6 @@ class Session:
             except Exception:
                 pass
             self._pipe = None
-        # Stop screencast session so next connection gets a fresh one
-        # (important when display_mode or resolution changes)
-        try:
-            from . import screencast
-            screencast.stop_screencast_session()
-        except Exception:
-            pass
         if self._injector:
             try:
                 self._injector.close()
@@ -475,7 +487,7 @@ class Session:
             self._sock.close()
         except Exception:
             pass
-        logger.info("Session cleaned up")
+        logger.info("Session cleaned up (screencast session kept for reuse)")
 
 
 def _setup_adb_connection(args):
@@ -649,5 +661,12 @@ def run_server(args):
     except KeyboardInterrupt:
         logger.info("Server shutting down")
     finally:
+        # Release any lingering ScreenCast session so the backend does not
+        # keep rendering (and leaking) after the server exits.
+        try:
+            from . import screencast
+            screencast.stop_screencast_session()
+        except Exception:
+            pass
         discovery.stop()
         server.close()
