@@ -80,7 +80,7 @@ jobs:
             pip install -r host/requirements.txt 2>/dev/null || true
           fi
           # gi 相关步骤用系统 python3 (绑定系统 python3-gi)
-          SYSTEM_PY3=$(which python3)
+          SYSTEM_PY3=/usr/bin/python3
           echo "System python3: $SYSTEM_PY3"; $SYSTEM_PY3 -c "import gi; print('gi OK')" 2>&1 || true
 
       - name: py_compile 全量
@@ -140,7 +140,7 @@ jobs:
           GSK_RENDERER: gl
         run: |
           cd host
-          SYSTEM_PY3=$(which python3)
+          SYSTEM_PY3=/usr/bin/python3
           PYTHONPATH=. xvfb-run -a $SYSTEM_PY3 - <<'PY'
           import gi
           gi.require_version("Gtk","4.0"); gi.require_version("GLib","2.0")
@@ -161,16 +161,18 @@ jobs:
       - name: 配置一致性校验
         if: runner.os == 'Linux'
         run: |
-          python - <<'PY'
+          /usr/bin/python3 - <<'PY'
           import sys
           sys.path.insert(0, "host")
           from psp_host.config import RESOLUTIONS, FPS_OPTIONS
-          from psp_host import gui
           assert set(RESOLUTIONS.keys()) == set(["720p","750p","1080p","2K"])
           assert tuple(FPS_OPTIONS) == (60,90,120,144)
+          print("OK config basic consistency")
+          # gui 导入需要 gi, 只有系统 python3 有
+          from psp_host import gui
           assert gui.RESOLUTIONS is RESOLUTIONS
           assert gui.FPS_OPTIONS is FPS_OPTIONS
-          print("✓ gui 与 config 配置同源一致")
+          print("OK gui 与 config 配置同源一致")
           PY
 
       - name: 跨平台 GUI 模块导入 (Windows/macOS)
