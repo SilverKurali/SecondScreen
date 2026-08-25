@@ -146,6 +146,12 @@ def main():
 
     # ── 5. 输入回传 ──────────────────────────────────────────
     print(f"\n{BOLD}[5/6] 输入回传（触摸 → 鼠标）{RESET}")
+    try:
+        import evdev  # noqa
+        check("python-evdev（虚拟鼠标 uinput）", True, "已随项目 venv 内置")
+    except ImportError:
+        check("python-evdev（虚拟鼠标 uinput）", False, "未安装",
+              "已随 host/venv 内置；若缺失请运行 ./setup.sh 重建 venv")
     if wayland:
         check("ydotool（Wayland 输入注入）", cmd_ok("ydotool"), "可选，缺失则关闭输入回传",
               "debian: sudo apt install ydotool && sudo usermod -aG input $USER")
@@ -164,7 +170,7 @@ def main():
     missing = [r for r in results if not r[1]]
     if not missing:
         print(f"  {GREEN}✅ 所有必选依赖均已就绪，可以直接运行:{RESET}")
-        print(f"     cd host && python3 -m psp_host --help")
+        print(f"     host/run.sh --output HEADLESS-2 --resolution 1080p --fps 60 --adb auto --debug")
     else:
         print(f"  {RED}❌ {len(missing)} 项未满足，最快修复命令:{RESET}")
         distro = detect_distro()

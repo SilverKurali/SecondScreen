@@ -9,6 +9,9 @@
 #   ./setup.sh             # 完整安装（需 sudo 权限）
 #   ./setup.sh --no-venv   # 跳过 venv（直接用系统 Python）
 #   ./setup.sh --check     # 只检查环境，不安装
+#
+# 说明: Python 依赖 (evdev 等) 已随项目内置 venv (host/venv) 分发，
+#       运行时零安装；GStreamer/PyGObject 仍为系统前置条件（无法 pip 打包）。
 # =============================================================================
 set -euo pipefail
 
@@ -112,31 +115,34 @@ install_suse() {
         xdotool ydotool adb ffmpeg || true
 }
 
-# ── 创建 venv ─────────────────────────────────────────────────
+# ── 创建/复用 venv ───────────────────────────────────────────
 setup_venv() {
-    echo -e "\n${BOLD}[2/3] 创建 Python 虚拟环境${RESET}"
-    if [[ ! -d ".venv" ]]; then
-        python3 -m venv .venv
+    echo -e "\n${BOLD}[2/3] 配置 Python 虚拟环境 (host/venv)${RESET}"
+    VENV_DIR="host/venv"
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo "  项目未携带 venv，创建中（继承系统 GStreamer/PyGObject）..."
+        python3 -m venv "$VENV_DIR" --system-site-packages
+    else
+        echo "  使用项目内置 venv: $VENV_DIR/"
     fi
-    source .venv/bin/activate
-    pip install --upgrade pip
-    python3 -m pip install -r host/requirements.txt
-    echo -e "  ${GREEN}✓ 虚拟环境就绪: .venv/${RESET}"
-    echo "  以后运行: source .venv/bin/activate && python -m psp_host ..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install -r host/requirements.txt
+    echo -e "  ${GREEN}✓ 虚拟环境就绪: $VENV_DIR/${RESET}"
+    echo "  以后运行: host/run.sh --output HEADLESS-2 --resolution 1080p --fps 60 --adb auto --debug"
 }
 
 # ── 环境自检 ─────────────────────────────────────────────────
 run_check() {
     echo -e "\n${BOLD}[3/3] 运行环境自检${RESET}"
-    if [[ "$DO_VENV" == "1" && -d ".venv" ]]; then
-        .venv/bin/python3 host/check_env.py || true
+    if [[ "$DO_VENV" == "1" && -d "host/venv" ]]; then
+        host/venv/bin/python3 host/check_env.py || true
     else
         python3 host/check_env.py || true
     fi
     echo
     echo -e "${BOLD}安装结束。下一步:${RESET}"
     echo "  1) 创建虚拟显示器（X11）或确认已有（Wayland）"
-    echo "  2) cd host && python3 -m psp_host --help"
+    echo "  2) host/run.sh --output HEADLESS-2 --resolution 1080p --fps 60 --adb auto"
 }
 
 # ── 主流程 ────────────────────────────────────────────────────
