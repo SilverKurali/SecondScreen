@@ -25,7 +25,7 @@ class DecoderThread(
 ) {
     companion object {
         private const val TAG = "DecoderThread"
-        private const val MAX_QUEUE_SIZE = 3
+        private const val MAX_QUEUE_SIZE = 8  // 足够容纳网络抖动（~133ms@60fps）
         private const val TIMEOUT_US = 10000L  // 10ms
     }
 
@@ -71,11 +71,12 @@ class DecoderThread(
     fun queueFrame(data: ByteArray, isKeyframe: Boolean, isConfig: Boolean) {
         if (!running) return
 
-        // Drop non-keyframes when queue is full
+        // Drop oldest frames when queue is too deep
         if (frameQueue.size >= MAX_QUEUE_SIZE) {
-            if (!isKeyframe) return
-            // Clear queue for keyframe
-            frameQueue.clear()
+            // Always keep the newest frame: drop oldest until there's room
+            while (frameQueue.size >= MAX_QUEUE_SIZE) {
+                frameQueue.poll()
+            }
         }
 
         frameQueue.add(FrameData(data, isKeyframe, isConfig))

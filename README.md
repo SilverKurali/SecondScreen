@@ -58,7 +58,21 @@ ADB-PSP/
 
 ## 快速开始
 
-### Linux 端 (x86_64)
+### 方法一：一键安装（推荐）
+
+拉下代码后执行以下命令，脚本会自动识别你的发行版（Debian/Ubuntu、Fedora、Arch、openSUSE）并安装全部依赖：
+
+```bash
+./setup.sh
+```
+
+安装完成后运行环境自检，检查缺什么会给出明确提示。也可以随时重跑自检：
+
+```bash
+./setup.sh --check
+```
+
+### 方法二：手动安装
 
 **1. 安装依赖**
 
@@ -74,6 +88,8 @@ sudo apt install xdotool
 # 虚拟显示器 (可选，用于扩展模式)
 sudo apt install xserver-xorg-video-intel  # Intel GPU
 ```
+
+> 💡 Wayland 用户（Hyprland/GNOME/KDE）还需安装：`gstreamer1.0-pipewire`、`xdg-desktop-portal-*`（对应桌面后端，如 `xdg-desktop-portal-hyprland`）；`screencast.py` 会自动检测后端并直连，无需额外配置。
 
 **2. 启动服务端**
 

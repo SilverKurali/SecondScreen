@@ -221,7 +221,10 @@ class Session:
 
                 buf = sample.get_buffer()
                 buf_size = buf.get_size()
-                is_key = buf_size > 5000
+                # 检测关键帧：GStreamer x264enc 清除 delta-unit 标志表示关键帧
+                is_key = not buf.get_flags() & 0x0010  # GST_BUFFER_FLAG_DELTA_UNIT = 0x0010
+                if not is_key and buf_size > 30000:
+                    is_key = True  # 备用：>30KB 的帧基本是关键帧
 
                 try:
                     success, data = buf.extract_dup(0, buf_size)
@@ -272,11 +275,16 @@ class Session:
                 logger.info("First encoded frame received from pipeline")
 
             buf = sample.get_buffer()
-            # Detect keyframe: large buffers are typically keyframes in VP9/VP8
-            # For H.264, SPS/PPS NALs start with 0x67/0x68/0x65
             buf_size = buf.get_size()
-            is_key = buf_size > 5000  # Heuristic: keyframes are much larger
             is_config = False
+
+            # 检测关键帧：GStreamer x264enc 会清除 delta-unit 标志
+            # 对于关键帧，GST_BUFFER_FLAG_DELTA_UNIT (0x0010) 不会被设置
+            # 对于P帧，该标志会被设置
+            is_key = not buf.get_flags() & 0x0010  # GST_BUFFER_FLAG_DELTA_UNIT = 0x0010
+            if not is_key and buf_size > 30000:
+                # 备用：>30KB 的帧基本是关键帧
+                is_key = True
 
             # Extract data — GStreamer versions vary in return type
             try:
@@ -604,7 +612,7 @@ def run_server(args):
     print(f"   服务端口: {args.port}")
     print(f"   Android 端打开 PSP 应用即可自动发现本机")
     if is_wayland:
-        print(f"   🖥 Wayland 模式: 使用 Mutter ScreenCast 虚拟显示器")
+        print(f"   🖥 Wayland 模式: 使用 Portal ScreenCast 虚拟显示器")
         print(f"     连接后自动创建扩展屏幕（非镜像模式）")
     print()
 

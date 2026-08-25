@@ -235,12 +235,16 @@ def _build_x11_source(args):
 
 
 def _build_wayland_source(args):
-    """Build capture source on Wayland using Mutter ScreenCast + pipewiresrc."""
+    """Build capture source on Wayland.
+
+    Tries Portal ScreenCast first (via pipewiresrc), then falls back to
+    ximagesrc on XWayland if available.
+    """
     from . import screencast
 
     node_id = screencast._node_id
     if node_id is None:
-        logger.info("Creating Mutter ScreenCast session ...")
+        logger.info("Creating Portal ScreenCast session ...")
         node_id = screencast.create_screencast_session(
             width=args.width, height=args.height
         )
@@ -248,10 +252,45 @@ def _build_wayland_source(args):
     if node_id is not None:
         src = f"pipewiresrc path={node_id}"
         logger.info("Using pipewiresrc path=%d", node_id)
-    else:
-        logger.warning("ScreenCast session failed, trying plain pipewiresrc")
-        src = "pipewiresrc"
+        return f"{src} ! videoconvert"
 
+    # Portal failed — fall back to XWayland ximagesrc if DISPLAY is set
+    display = args.display or os.environ.get("DISPLAY")
+    if display:
+        logger.warning("Portal ScreenCast failed, falling back to ximagesrc on XWayland (%s)", display)
+        if args.region:
+            try:
+                parts = args.region.replace("x", ",").split(",")
+                sx, sy, sw, sh = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+                return (
+                    f"ximagesrc display-name={display} "
+                    f"startx={sx} starty={sy} "
+                    f"endx={sx + sw} endy={sy + sh} "
+                    f"use-damage=false show-pointer=false"
+                )
+            except (ValueError, IndexError):
+                logger.warning("Invalid --region format, using full screen")
+                return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+        elif args.output:
+            geo = _get_output_geometry(args.output)
+            if geo:
+                sx, sy, sw, sh = geo
+                logger.info("Output '%s' geometry: %d,%d %dx%d (XWayland fallback)", args.output, sx, sy, sw, sh)
+                return (
+                    f"ximagesrc display-name={display} "
+                    f"startx={sx} starty={sy} "
+                    f"endx={sx + sw} endy={sy + sh} "
+                    f"use-damage=false show-pointer=false"
+                )
+            else:
+                logger.warning("Could not detect output '%s', falling back to full screen", args.output)
+                return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+        else:
+            return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+
+    # No portal, no XWayland — last resort
+    logger.warning("ScreenCast session failed, trying plain pipewiresrc (may not work)")
+    src = "pipewiresrc"
     return f"{src} ! videoconvert"
 
 
