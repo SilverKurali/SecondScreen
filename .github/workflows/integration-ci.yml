@@ -66,6 +66,7 @@ jobs:
           sudo apt-get install -y \
             gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+            python3-gi python3-gi-cairo \
             libgirepository1.0-dev libcairo2-dev pkg-config \
             gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
             gir1.2-gtk-4.0 gir1.2-glib-2.0 \
@@ -78,10 +79,9 @@ jobs:
           if [ -f host/requirements.txt ]; then
             pip install -r host/requirements.txt 2>/dev/null || true
           fi
-          # Linux: 为当前 Python 编译安装 PyGObject, 使 gi 可用于任意矩阵版本
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            pip install PyGObject 2>&1 | tail -3 || echo "::warning::PyGObject 编译失败, GUI 冲烟将跳过"
-          fi
+          # gi 相关步骤用系统 python3 (绑定系统 python3-gi)
+          SYSTEM_PY3=$(which python3)
+          echo "System python3: $SYSTEM_PY3"; $SYSTEM_PY3 -c "import gi; print('gi OK')" 2>&1 || true
 
       - name: py_compile 全量
         run: |
@@ -111,23 +111,19 @@ jobs:
       - name: 协议深度集成断言
         run: |
           cd host
-          PYTHONPATH=. python - <<'PY'
+          PYTHONIOENCODING=utf-8 PYTHONPATH=. python - <<'PY'
           import json, struct
           from psp_host import protocol as proto
-          # 帧往返
           for flags, payload in [(0, b"hi"), (proto.FLAG_CONTROL, b'{"x":1}'),
                                  (proto.FLAG_KEYFRAME, bytes(range(256)))]:
               frame = proto.make_frame(flags, payload)
-              rf = proto.FrameReader.__new__(proto.FrameReader)
-              # 直接解码长度头
               n = struct.unpack("<I", frame[:4])[0]
-              assert n == len(frame) - 4, f"长度头错误: {n} vs {len(frame)-4}"
-          # 协商
+              assert n == len(frame) - 4, f"Length header mismatch: {n} vs {len(frame)-4}"
           ok, resp = proto.negotiate({"codec":"h264","width":1280,"height":720},
                                      {"codec":"auto","width":1920,"height":1080,"fps":60,"bitrate_kbps":6000})
-          assert ok, "协商应成功"
-          assert resp["codec"] in ("h264","auto"), f"codec 异常: {resp}"
-          print("✓ 协议深度断言通过")
+          assert ok, "Negotiation should succeed"
+          assert resp["codec"] in ("h264","auto"), f"codec {resp}"
+          print("OK 协议深度断言通过")
           PY
 
       - name: CLI 冒烟
@@ -144,7 +140,8 @@ jobs:
           GSK_RENDERER: gl
         run: |
           cd host
-          PYTHONPATH=. xvfb-run -a python - <<'PY'
+          SYSTEM_PY3=$(which python3)
+          PYTHONPATH=. xvfb-run -a $SYSTEM_PY3 - <<'PY'
           import gi
           gi.require_version("Gtk","4.0"); gi.require_version("GLib","2.0")
           from gi.repository import Gtk, GLib, Gio
@@ -158,7 +155,7 @@ jobs:
           argv = win._build_argv()
           assert "--resolution" in argv and "--port" in argv
           win._set_running(True); win._set_running(False)
-          print("✓ GUI 窗口构造与方法调用通过")
+          print("OK GUI 窗口构造与方法调用通过")
           PY
 
       - name: 配置一致性校验
