@@ -1,14 +1,30 @@
 """PSP Host entry point."""
 
 import logging
+import sys
 
 from .config import parse_args
 from .capture import get_encoder_info, list_x11_outputs
 from .server import run_server
 
 
+def _configure_stdio():
+    """强制 stdout/stderr 使用 UTF-8。
+
+    Windows 控制台默认 cp1252，无法编码输出中的中文与 ✓/→ 等符号，
+    冻结包（PyInstaller）下会直接 UnicodeEncodeError 崩溃。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main():
     """Main entry point."""
+    _configure_stdio()
     args = parse_args()
 
     # Graphical mode: launch GTK4 control panel
