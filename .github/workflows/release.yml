@@ -70,7 +70,7 @@ jobs:
         run: bash host/packaging/build_appimage.sh "${{ needs.read-version.outputs.version }}"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-appimage
           path: dist/packages/*.AppImage
@@ -124,7 +124,7 @@ jobs:
           Get-ChildItem dist\packages | Format-Table Name, Length
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-exe
           path: dist\packages\*.zip
@@ -171,7 +171,7 @@ jobs:
           ls -lh dist/packages/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-apk
           path: dist/packages/*.apk
