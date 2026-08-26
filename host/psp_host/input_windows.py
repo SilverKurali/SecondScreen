@@ -68,7 +68,7 @@ class INPUT(ctypes.Structure):
 
 
 SendInput = ctypes.windll.user32.SendInput
-SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), wintypes.c_int]
+SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 SendInput.restype = wintypes.UINT
 
 

@@ -58,7 +58,21 @@ ENCODER_PRIORITY = [
 
 
 def _check_element(name):
-    """Check if a GStreamer element is available."""
+    """Check if a GStreamer element is available.
+
+    优先进程内元素工厂探测（与实际管线加载路径一致）：
+    Windows 冻结包下 gst-inspect 子进程的 PATH/注册表环境与主进程不同，
+    子进程探测会误报编码器缺失。
+    """
+    try:
+        import gi
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+        if not Gst.is_initialized():
+            Gst.init(None)
+        return Gst.ElementFactory.find(name) is not None
+    except Exception:
+        pass
     try:
         result = subprocess.run(
             ["gst-inspect-1.0", name],

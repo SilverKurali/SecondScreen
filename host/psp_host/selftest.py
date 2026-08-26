@@ -42,10 +42,14 @@ def run_selftest():
     check("GTK4 GUI 类型库", _gtk)
 
     def _encoders():
+        import os
         from .capture import get_encoder_info
         found = [name for name, _codec, _element, avail in get_encoder_info() if avail]
         if not found:
-            raise RuntimeError("未找到任何可用视频编码器 (x264enc/nvh264enc/vpx)")
+            raise RuntimeError(
+                "未找到任何可用视频编码器 (x264enc/nvh264enc/vpx); "
+                f"GST_PLUGIN_PATH={os.environ.get('GST_PLUGIN_PATH', '<未设置>')}"
+            )
         return ", ".join(found)
     check("视频编码器", _encoders)
 

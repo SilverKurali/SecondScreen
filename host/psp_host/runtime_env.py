@@ -74,13 +74,15 @@ def bootstrap():
     if os.path.isdir(typelibs):
         os.environ["GI_TYPELIB_PATH"] = typelibs + sep + os.environ.get("GI_TYPELIB_PATH", "")
 
-    # 指向捆绑的 GStreamer 插件扫描器（子进程形式扫描插件时使用）
-    for d in (lib, plugins):
-        for name in ("gst-plugin-scanner", "gst-plugin-scanner.exe"):
-            cand = os.path.join(d, name)
-            if os.path.isfile(cand):
-                os.environ.setdefault("GST_PLUGIN_SCANNER", cand)
-                break
+    # 指向捆绑的 GStreamer 插件扫描器（子进程形式扫描插件时使用）。
+    # 仅 Linux 启用：Windows 冻结包下改用进程内扫描，避免扫描器子进程环境差异。
+    if sys.platform != "win32":
+        for d in (lib, plugins):
+            for name in ("gst-plugin-scanner",):
+                cand = os.path.join(d, name)
+                if os.path.isfile(cand):
+                    os.environ.setdefault("GST_PLUGIN_SCANNER", cand)
+                    break
 
     # 隔离 GStreamer 插件注册表，避免与宿主版本冲突
     cache = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
