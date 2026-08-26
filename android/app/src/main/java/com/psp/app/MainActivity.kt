@@ -616,11 +616,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 计算目标码率。基准码率表与服务端 config.get_bitrate_kbps 保持一致，
+     * 画质倍率在此基础上缩放（服务端会尊重客户端码率，上限为基准 3 倍）。
+     */
     private fun calculateBitrate(width: Int, height: Int, fps: Int, quality: Float): Int {
-        val baseKbps = 10000
-        val pixelRatio = (width * height).toFloat() / (1920 * 1080)
         val effectiveFps = if (fps == 0) 144 else fps
-        val fpsRatio = effectiveFps.toFloat() / 60f
-        return (baseKbps * pixelRatio * fpsRatio * quality).toInt()
+        val baseKbps = when (Triple(width, height, effectiveFps)) {
+            // 720p
+            Triple(1280, 720, 60) -> 6000
+            Triple(1280, 720, 90) -> 8000
+            Triple(1280, 720, 120) -> 10000
+            Triple(1280, 720, 144) -> 12000
+            // 1080p
+            Triple(1920, 1080, 60) -> 10000
+            Triple(1920, 1080, 90) -> 14000
+            Triple(1920, 1080, 120) -> 18000
+            Triple(1920, 1080, 144) -> 21600
+            // 2K (1440p)
+            Triple(2560, 1440, 60) -> 18000
+            Triple(2560, 1440, 90) -> 24000
+            Triple(2560, 1440, 120) -> 32000
+            Triple(2560, 1440, 144) -> 38400
+            else -> {
+                // 非预设分辨率（如按设备比例适配的高度）：与服务端 fallback 公式一致，
+                // 以 720p@60 为基准，按像素数和帧率线性缩放。
+                val ratio = (width.toFloat() * height.toFloat()) / (1280f * 720f) * (effectiveFps.toFloat() / 60f)
+                (6000f * ratio).toInt()
+            }
+        }
+        return (baseKbps * quality).toInt()
     }
 }

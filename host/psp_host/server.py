@@ -1,5 +1,6 @@
 """TCP server for PSP protocol: accepts device connections, streams video, handles input."""
 
+import copy
 import json
 import logging
 import os
@@ -29,11 +30,16 @@ class Session:
     def __init__(self, sock, addr, args):
         self._sock = sock
         self._addr = addr
-        self._args = args
+        # 复制 args：_start_pipeline 会按协商结果改写参数，直接改共享对象会污染后续会话。
+        self._args = copy.copy(args)
         self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         # Large socket buffers for smooth streaming
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+
+        # 虚拟显示器实际分辨率（输入坐标映射基准，不随协商结果变化）
+        self._display_w = self._args.width
+        self._display_h = self._args.height
 
         self._frame_queue = queue.Queue(maxsize=3)
         self._running = False
@@ -87,22 +93,14 @@ class Session:
             hello = json.loads(payload.decode("utf-8"))
             logger.info("Handshake from %s: %s", self._addr, hello.get("device", "unknown"))
 
-            # 提取设备屏幕尺寸（用于比例自适应）
+            # 提取设备屏幕尺寸（仅记录；客户端已按自身屏幕适配好请求分辨率，
+            # 服务端不再二次改写，避免覆盖用户在安卓端明确选择的分辨率）
             screen_width = hello.get("screen_width", 0)
             screen_height = hello.get("screen_height", 0)
             if screen_width > 0 and screen_height > 0:
                 device_ratio = screen_width / screen_height
                 logger.info("Device screen: %dx%d (ratio=%.2f)", screen_width, screen_height, device_ratio)
-                # 根据设备比例调整请求分辨率
-                want = hello.get("want", {})
-                want_w = want.get("width", 1920)
-                want_h = want.get("height", 1080)
-                if device_ratio > 1.0:  # 横屏
-                    want["height"] = int(want_w / device_ratio)
-                else:  # 竖屏
-                    want["width"] = int(want_h * device_ratio)
-            else:
-                want = hello.get("want", {})
+            want = hello.get("want", {})
             have = {
                 "codec": self._args.codec,
                 "width": self._args.width,
@@ -133,16 +131,16 @@ class Session:
         if system == "Linux":
             from .input_linux import InputInjector
             self._injector = InputInjector(
-                screen_width=self._args.width,
-                screen_height=self._args.height,
+                screen_width=self._display_w,
+                screen_height=self._display_h,
                 display=self._args.display,
                 output_name=getattr(self._args, 'output', None),
             )
         elif system == "Windows":
             from .input_windows import InputInjector
             self._injector = InputInjector(
-                screen_width=self._args.width,
-                screen_height=self._args.height,
+                screen_width=self._display_w,
+                screen_height=self._display_h,
             )
         else:
             logger.warning("No input injection available on %s", system)
@@ -423,17 +421,18 @@ class Session:
         logger.debug("Input event: kind=%s msg=%s", kind, msg)
         try:
             # Offset is handled inside injector.mouse_move() automatically
+            # 注意：归一化坐标要映射到虚拟显示器实际分辨率（而非协商后的流分辨率）
 
             if kind == "move":
-                x = msg.get("x", 0.5) * self._args.width
-                y = msg.get("y", 0.5) * self._args.height
+                x = msg.get("x", 0.5) * self._display_w
+                y = msg.get("y", 0.5) * self._display_h
                 self._injector.mouse_move(x, y)
 
             elif kind == "btn":
                 btn = msg.get("btn", 1)
                 state = msg.get("state", 1)
-                x = msg.get("x", 0.5) * self._args.width
-                y = msg.get("y", 0.5) * self._args.height
+                x = msg.get("x", 0.5) * self._display_w
+                y = msg.get("y", 0.5) * self._display_h
                 self._injector.mouse_move(x, y)
                 self._injector.mouse_button(btn, state)
 

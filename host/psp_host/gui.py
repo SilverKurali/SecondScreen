@@ -39,7 +39,7 @@ DEFAULT_PORT = 4747
 # 运行统计正则（从日志解析）
 _RE_FPS = re.compile(r"fps\s*[:=]\s*(\d+)", re.I)
 _RE_SENT = re.compile(r"Sent frame (\d+)")
-_RE_NEG = re.compile(r"Negotiated|Session negotiated:\s*(\d+)x(\d+)@(\d+)\s+(\S+)\s*(\d+)\s*kbps", re.I)
+_RE_NEG = re.compile(r"Session negotiated:\s*(\d+)x(\d+)@(\d+)\s+(\S+)\s+(\d+)\s*kbps", re.I)
 _RE_CONN = re.compile(r"Connection from ([\d.]+):(\d+)")
 
 
@@ -543,7 +543,7 @@ class PSPHostWindow(Gtk.ApplicationWindow):
                 argv += ["--output", created]
                 self._log(f"已创建虚拟显示器: {created}")
             else:
-                self._log("未创建虚拟屏，将以全屏模式捕获主显示器。")
+                self._log("未指定输出，服务端将自动创建虚拟屏（失败则回退主屏捕获）。")
 
         if self.debug_switch.get_active():
             argv.append("--debug")

@@ -98,7 +98,40 @@ class TestNegotiation(unittest.TestCase):
         self.assertEqual(response["width"], 1920)
         self.assertEqual(response["height"], 1080)
         self.assertEqual(response["fps"], 60)
+        # 码率上限为服务端基准的 3 倍（客户端画质倍率上限）
+        self.assertEqual(response["bitrate_kbps"], 30000)
+
+    def test_client_bitrate_multiplier_respected(self):
+        """Client quality multiplier can raise bitrate above host base."""
+        want = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 20000}
+        have = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
+        ok, response = proto.negotiate(want, have)
+        self.assertTrue(ok)
+        self.assertEqual(response["bitrate_kbps"], 20000)
+
+    def test_bitrate_defaults_to_host(self):
+        """Without client bitrate, host base is used."""
+        want = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60}
+        have = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
+        ok, response = proto.negotiate(want, have)
+        self.assertTrue(ok)
         self.assertEqual(response["bitrate_kbps"], 10000)
+
+    def test_resolution_even_alignment(self):
+        """Negotiated resolution is aligned to even values for I420/H.264."""
+        want = {"codec": "h264", "width": 1920, "height": 865, "fps": 60}
+        have = {"codec": "h264", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
+        ok, response = proto.negotiate(want, have)
+        self.assertTrue(ok)
+        self.assertEqual(response["height"], 864)
+
+    def test_codec_follows_host_selection(self):
+        """Host codec selection is honored; 'auto' falls back to h264."""
+        want = {"codec": "h264", "width": 1280, "height": 720, "fps": 60}
+        have = {"codec": "auto", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
+        ok, response = proto.negotiate(want, have)
+        self.assertTrue(ok)
+        self.assertEqual(response["codec"], "h264")
 
     def test_unsupported_codec(self):
         """Test unsupported codec falls back to h264."""
@@ -117,12 +150,12 @@ class TestNegotiation(unittest.TestCase):
         self.assertIn("Resolution too small", response["reason"])
 
     def test_vp9_codec(self):
-        """Test VP9 falls back to h264."""
+        """Test host VP9 selection is honored."""
         want = {"codec": "vp9", "width": 1280, "height": 720, "fps": 60}
         have = {"codec": "vp9", "width": 1920, "height": 1080, "fps": 60, "bitrate_kbps": 10000}
         ok, response = proto.negotiate(want, have)
         self.assertTrue(ok)
-        self.assertEqual(response["codec"], "h264")
+        self.assertEqual(response["codec"], "vp9")
 
 
 class TestFrameReader(unittest.TestCase):

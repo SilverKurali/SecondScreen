@@ -126,15 +126,15 @@ def negotiate(want, have):
         welcome message to send.
     """
     supported_codecs = {"h264", "vp9", "vp8"}
-    # Always prefer h264: x264enc is far faster and higher quality than
-    # software vp9enc, and Android hardware H.264 decoding is universal.
-    codec = "h264"
+    # 编码以服务端配置为准（GUI/CLI 选择的编码器）；未指定或无效时默认
+    # h264: x264enc 软编快且质量高，Android 硬件 H.264 解码通用。
+    codec = have.get("codec") or "h264"
     if codec not in supported_codecs:
-        return False, {"type": "welcome", "ok": False, "reason": f"Unsupported codec: {codec}"}
+        codec = "h264"
 
-    # Clamp resolution to what host offers
-    w = min(want.get("width", 1920), have["width"])
-    h = min(want.get("height", 1080), have["height"])
+    # Clamp resolution to what host offers; align to even values (I420/x264 要求)
+    w = min(want.get("width", 1920), have["width"]) & ~1
+    h = min(want.get("height", 1080), have["height"]) & ~1
     if w < 640 or h < 480:
         return False, {"type": "welcome", "ok": False, "reason": "Resolution too small"}
 
@@ -143,7 +143,14 @@ def negotiate(want, have):
         fps = have["fps"]  # 无限制: 使用服务端最大帧率
     else:
         fps = min(fps, have["fps"])
-    bitrate = min(want.get("bitrate_kbps", have["bitrate_kbps"]), have["bitrate_kbps"])
+
+    # 码率: 客户端按画质倍率计算，尊重客户端选择（可高于服务端基准），
+    # 上限为服务端基准的 3 倍（与客户端最大画质倍率一致），下限 500 kbps。
+    want_bitrate = want.get("bitrate_kbps") or 0
+    if want_bitrate > 0:
+        bitrate = max(500, min(want_bitrate, have["bitrate_kbps"] * 3))
+    else:
+        bitrate = have["bitrate_kbps"]
 
     return True, {
         "type": "welcome",

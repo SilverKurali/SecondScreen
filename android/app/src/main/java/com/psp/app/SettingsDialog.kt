@@ -12,7 +12,7 @@ import android.widget.TextView
  *
  * Allows the user to select:
  * - Resolution: 720p (1280x720), 1080p (1920x1080), 2K (2560x1440)
- * - Frame rate: 60, 90, 120 fps
+ * - Frame rate: 60, 90, 120, 144 fps, or unlimited (server max)
  * - Quality: bitrate multiplier 0.5x - 3.0x
  */
 data class StreamSettings(
