@@ -264,11 +264,24 @@ def _build_wayland_source(args):
         )
 
     if node_id is not None:
-        src = f"pipewiresrc path={node_id}"
-        logger.info("Using pipewiresrc path=%d", node_id)
-        return f"{src} ! videoconvert"
+        src = f"pipewiresrc path={node_id} always-copy=false do-timestamp=true min-buffers=4"
+        logger.info("Using pipewiresrc path=%d (low-latency)", node_id)
+        # 不加 videoconvert，build_pipeline 会统一加
+        return src
 
-    # Portal failed — fall back to XWayland ximagesrc if DISPLAY is set
+    # Portal failed — try Mutter ScreenCast (GNOME direct D-Bus, no portal needed)
+    try:
+        from . import wportal
+        logger.info("Trying Mutter ScreenCast (wportal) ...")
+        mutter_node = wportal.create_screencast_session()
+        if mutter_node is not None:
+            logger.info("Using Mutter ScreenCast pipewiresrc path=%d (low-latency)", mutter_node)
+            # 不加 videoconvert，build_pipeline 会统一加
+            return f"pipewiresrc path={mutter_node} always-copy=false do-timestamp=true min-buffers=4"
+    except Exception as e:
+        logger.warning("Mutter ScreenCast (wportal) failed: %s", e)
+
+    # All PipeWire sources failed — fall back to XWayland ximagesrc if DISPLAY is set
     display = args.display or os.environ.get("DISPLAY")
     if display:
         logger.warning("Portal ScreenCast failed, falling back to ximagesrc on XWayland (%s)", display)
@@ -284,7 +297,7 @@ def _build_wayland_source(args):
                 )
             except (ValueError, IndexError):
                 logger.warning("Invalid --region format, using full screen")
-                return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+                return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
         elif args.output:
             geo = _get_output_geometry(args.output)
             if geo:
@@ -298,14 +311,13 @@ def _build_wayland_source(args):
                 )
             else:
                 logger.warning("Could not detect output '%s', falling back to full screen", args.output)
-                return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+                return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
         else:
-            return f"ximagesrc display-name={display} use-damage=false show-pointer=false ! videoconvert"
+            return f"ximagesrc display-name={display} use-damage=false show-pointer=false"
 
     # No portal, no XWayland — last resort
     logger.warning("ScreenCast session failed, trying plain pipewiresrc (may not work)")
-    src = "pipewiresrc"
-    return f"{src} ! videoconvert"
+    return "pipewiresrc always-copy=false do-timestamp=true"
 
 
 def _get_output_geometry(output_name):

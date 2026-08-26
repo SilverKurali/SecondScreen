@@ -168,15 +168,38 @@ class PSPHostWindow(Gtk.ApplicationWindow):
         r += 1
         self.port_spin = self._grid_spin(cfg_box, 0, r, "端口", 1024, 65535, DEFAULT_PORT, 1, 0)
         self.quality_spin = self._grid_spin(cfg_box, 2, r, "画质倍率", 0.5, 3.0, 1.0, 0.1, 2)
-        self.adb_combo = self._grid_combo(cfg_box, 4, r, "ADB", ["off", "auto", "usb", "wireless"], "auto")
+        self.adb_combo = self._grid_combo(cfg_box, 4, r, "连接方式",
+            ["仅WiFi", "仅USB", "WiFi+USB", "无线ADB"], "WiFi+USB")
         r += 1
-        cfg_box.attach(Gtk.Label(label="捕获输出", halign=Gtk.Align.END), 0, r, 1, 1)
-        self.output_combo = Gtk.DropDown.new_from_strings(["(自动创建虚拟屏)"])
+        cfg_box.attach(Gtk.Label(label="捕获模式", halign=Gtk.Align.END), 0, r, 1, 1)
+        self.capture_mode_combo = Gtk.DropDown.new_from_strings(
+            ["自动创建虚拟屏", "指定输出", "捕获区域", "全屏捕获"]
+        )
+        self.capture_mode_combo.set_hexpand(True)
+        self.capture_mode_combo.connect("notify::selected",
+                                        lambda *_: self._on_capture_mode_changed())
+        cfg_box.attach(self.capture_mode_combo, 1, r, 1, 1)
+        # 输出名下拉（"指定输出"模式可见）
+        self.output_combo = Gtk.DropDown.new_from_strings(["(无)"])
         self.output_combo.set_hexpand(True)
-        cfg_box.attach(self.output_combo, 1, r, 3, 1)
+        cfg_box.attach(self.output_combo, 2, r, 1, 1)
         self._refresh_outputs_btn = Gtk.Button(label="刷新")
         self._refresh_outputs_btn.connect("clicked", lambda *_: self.refresh_outputs())
-        cfg_box.attach(self._refresh_outputs_btn, 4, r, 1, 1)
+        cfg_box.attach(self._refresh_outputs_btn, 3, r, 1, 1)
+        # 捕获区域输入框（"捕获区域"模式可见）
+        self.region_entry = Gtk.Entry(placeholder_text="x,y,WxH  如 1920,0,1920x1080")
+        self.region_entry.set_hexpand(True)
+        cfg_box.attach(self.region_entry, 4, r, 1, 1)
+        r += 1
+        # 显示模式：扩展（创建虚拟屏）vs 镜像（复制主屏）
+        cfg_box.attach(Gtk.Label(label="显示模式", halign=Gtk.Align.END), 0, r, 1, 1)
+        self.display_mode_combo = Gtk.DropDown.new_from_strings(
+            ["扩展模式", "镜像模式"]
+        )
+        self.display_mode_combo.set_hexpand(True)
+        self.display_mode_combo.connect("notify::selected",
+                                        lambda *_: self._on_capture_mode_changed())
+        cfg_box.attach(self.display_mode_combo, 1, r, 1, 1)
         r += 1
         self.debug_switch = self._grid_switch(cfg_box, 0, r, "调试日志", False)
         self.no_input_switch = self._grid_switch(cfg_box, 2, r, "禁用输入回传", False)
@@ -230,6 +253,7 @@ class PSPHostWindow(Gtk.ApplicationWindow):
         scroller.get_vadjustment().connect("value-changed", self._on_scroll_changed)
 
         self.refresh_outputs()
+        self._on_capture_mode_changed()  # 初始化控件可见性
 
     def _grid_combo(self, grid, col, row, label_text, items, default):
         grid.attach(Gtk.Label(label=label_text, halign=Gtk.Align.END), col, row, 1, 1)
@@ -521,29 +545,90 @@ class PSPHostWindow(Gtk.ApplicationWindow):
         self.output_combo.set_model(model)
         self.output_combo.set_selected(0)
 
+    # ── 捕获模式切换 ──────────────────────────────────────────
+    def _on_capture_mode_changed(self):
+        """根据捕获模式 + 显示模式显示/隐藏对应控件。"""
+        capture_mode = self._combo_value(self.capture_mode_combo)
+        display_mode = self._combo_value(self.display_mode_combo)
+        is_mirror = display_mode == "镜像模式"
+
+        # 镜像模式下强制走捕获主屏逻辑，虚拟屏相关控件全部隐藏
+        self.output_combo.set_visible(False)
+        self._refresh_outputs_btn.set_visible(False)
+        self.region_entry.set_visible(False)
+
+        if is_mirror:
+            # 镜像模式：不需要额外控件，启动时自动获取主屏区域
+            pass
+        elif capture_mode in ("自动创建虚拟屏", "指定输出"):
+            self.output_combo.set_visible(True)
+            self._refresh_outputs_btn.set_visible(True)
+        elif capture_mode == "捕获区域":
+            self.region_entry.set_visible(True)
+        # "全屏捕获"不需要额外控件
+
     # ── 构造命令行 ──────────────────────────────────────────
     def _build_argv(self):
         res = self._combo_value(self.res_combo)
         fps = self._combo_value(self.fps_combo)
         codec = self._combo_value(self.codec_combo)
-        adb = self._combo_value(self.adb_combo)
+        # 连接方式映射到 CLI --adb 参数
+        _CONN_MAP = {"仅WiFi": "off", "仅USB": "usb",
+                     "WiFi+USB": "auto", "无线ADB": "wireless"}
+        adb = _CONN_MAP.get(self._combo_value(self.adb_combo), "auto")
         port = int(self.port_spin.get_value())
         quality = self.quality_spin.get_value()
 
         argv = [RUN_SH, "--resolution", res, "--fps", fps, "--codec", codec,
                 "--port", str(port), "--quality", f"{quality:.2f}", "--adb", adb]
 
-        out_sel = self.output_combo.get_selected_item()
-        out_text = out_sel.get_string() if out_sel else ""
-        if out_text and not out_text.startswith("(自动"):
-            argv += ["--output", out_text]
-        else:
-            created = _create_headless()
-            if created:
-                argv += ["--output", created]
-                self._log(f"已创建虚拟显示器: {created}")
+        # 根据捕获模式 + 显示模式添加参数
+        capture_mode = self._combo_value(self.capture_mode_combo)
+        display_mode = self._combo_value(self.display_mode_combo)
+        is_mirror = display_mode == "镜像模式"
+
+        if is_mirror:
+            # 镜像模式：捕获主屏内容（不创建虚拟屏）
+            from .capture import _is_wayland
+            if _is_wayland():
+                # Wayland: Portal ScreenCast 让用户选主屏，不需要获取几何
+                argv.append("--fullscreen")
+                self._log("镜像模式 (Wayland): Portal 将让你选择主屏")
             else:
-                self._log("未指定输出，服务端将自动创建虚拟屏（失败则回退主屏捕获）。")
+                # X11: 获取主屏精确几何，走 --region
+                from .vdisplay import get_primary_geometry
+                geo = get_primary_geometry()
+                if geo:
+                    x, y, w, h = geo
+                    argv += ["--region", f"{x},{y},{w}x{h}"]
+                    self._log(f"镜像模式: 捕获主屏 {w}x{h}+{x}+{y}")
+                else:
+                    argv.append("--fullscreen")
+                    self._log("镜像模式: 无法获取主屏区域，使用全屏捕获")
+        elif capture_mode == "全屏捕获":
+            argv.append("--fullscreen")
+        elif capture_mode == "捕获区域":
+            region = self.region_entry.get_text().strip()
+            if not region:
+                self._log("⚠ 捕获区域为空，请填写 x,y,WxH 格式（如 1920,0,1920x1080）\n")
+                return None
+            argv += ["--region", region]
+        else:  # "自动创建虚拟屏" 或 "指定输出"
+            out_sel = self.output_combo.get_selected_item()
+            out_text = out_sel.get_string() if out_sel else ""
+            if capture_mode == "指定输出" and out_text and not out_text.startswith("("):
+                argv += ["--output", out_text]
+            else:
+                # 自动模式：若选了具体输出则用它，否则创建虚拟屏
+                if out_text and not out_text.startswith("("):
+                    argv += ["--output", out_text]
+                else:
+                    created = _create_headless()
+                    if created:
+                        argv += ["--output", created]
+                        self._log(f"已创建虚拟显示器: {created}")
+                    else:
+                        self._log("未指定输出，服务端将自动创建虚拟屏（失败则回退主屏捕获）。")
 
         if self.debug_switch.get_active():
             argv.append("--debug")
@@ -561,7 +646,23 @@ class PSPHostWindow(Gtk.ApplicationWindow):
         if self._proc is not None and self._proc.poll() is None:
             self.append_log("服务已在运行中。\n")
             return
+        # 清理可能残留的旧服务进程（按端口查找，避免误杀 GUI 自身）
+        port = int(self.port_spin.get_value())
+        try:
+            import subprocess as _sp, os as _os
+            # 用 fuser 查找占用端口的进程（比 pkill 精确）
+            r = _sp.run(["fuser", f"{port}/tcp"],
+                       capture_output=True, text=True, timeout=3)
+            for pid_s in r.stdout.split():
+                pid = int(pid_s)
+                if pid != _os.getpid():  # 不杀自己
+                    _sp.run(["kill", str(pid)], capture_output=True, timeout=3)
+            import time as _t; _t.sleep(0.3)
+        except Exception:
+            pass
         argv = self._build_argv()
+        if argv is None:
+            return  # 参数校验失败，已在日志提示
         self.append_log("启动: " + " ".join(argv) + "\n")
         try:
             self._proc = subprocess.Popen(
@@ -666,7 +767,9 @@ class PSPHostWindow(Gtk.ApplicationWindow):
         self.stop_btn.set_sensitive(running)
         for w in (self.res_combo, self.fps_combo, self.codec_combo, self.adb_combo,
                   self.port_spin, self.quality_spin, self.output_combo,
-                  self._refresh_outputs_btn, self.debug_switch, self.no_input_switch):
+                  self._refresh_outputs_btn, self.debug_switch, self.no_input_switch,
+                  self.capture_mode_combo, self.region_entry,
+                  self.display_mode_combo):
             w.set_sensitive(not running)
         if running:
             self.status_label.set_text("● 运行中")

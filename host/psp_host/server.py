@@ -50,6 +50,7 @@ class Session:
         self._display_offset_x = getattr(args, '_display_offset_x', 0) or 0
         self._display_offset_y = getattr(args, '_display_offset_y', 0) or 0
 
+
     def run(self):
         """Run the session: negotiate, then start streaming."""
         self._running = True
@@ -464,6 +465,22 @@ class Session:
         torn down here; the session is released on server shutdown.
         """
         self._running = False
+        if self._audio_pipe:
+            try:
+                import gi
+                gi.require_version("Gst", "1.0")
+                from gi.repository import Gst
+                self._audio_pipe.set_state(Gst.State.NULL)
+            except Exception:
+                pass
+            self._audio_pipe = None
+        if getattr(self, '_mic_pipe', None):
+            try:
+                self._mic_pipe.set_state(Gst.State.NULL)
+            except Exception:
+                pass
+            self._mic_pipe = None
+            self._mic_appsrc = None
         if self._pipe:
             try:
                 import gi
@@ -620,8 +637,13 @@ def run_server(args):
     print(f"   服务端口: {args.port}")
     print(f"   Android 端打开 PSP 应用即可自动发现本机")
     if is_wayland:
-        print(f"   🖥 Wayland 模式: 使用 Portal ScreenCast 虚拟显示器")
-        print(f"     连接后自动创建扩展屏幕（非镜像模式）")
+        if args.fullscreen:
+            print(f"   🖥 Wayland 镜像模式: Portal 将让你选择要捕获的屏幕")
+        elif args.region:
+            print(f"   🖥 Wayland: 捕获指定区域 {args.region}")
+        else:
+            print(f"   🖥 Wayland 扩展模式: Portal ScreenCast 虚拟显示器")
+            print(f"     连接后自动创建扩展屏幕")
     print()
 
     # ADB connection setup
@@ -641,7 +663,16 @@ def run_server(args):
     # Start TCP server
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", args.port))
+    try:
+        server.bind(("0.0.0.0", args.port))
+    except OSError as e:
+        if e.errno == 98:  # EADDRINUSE
+            logger.error("端口 %d 已被占用: %s", args.port, e)
+            print(f"\n❌ 端口 {args.port} 已被占用！")
+            print(f"   请先停止旧进程: pkill -f psp_host")
+            print(f"   或换一个端口: --port {args.port + 1}")
+            return
+        raise
     server.listen(1)
     logger.info("TCP server listening on port %d", args.port)
     logger.info("Configuration: %dx%d@%d %dkbps",

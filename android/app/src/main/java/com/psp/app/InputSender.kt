@@ -120,4 +120,5 @@ class InputSender(private val outputStream: OutputStream) {
             Log.w(TAG, "Failed to queue input: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
+
 }

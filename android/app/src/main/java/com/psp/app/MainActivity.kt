@@ -504,6 +504,7 @@ class MainActivity : AppCompatActivity() {
                     startStatsUpdates()
                     startDecoder(params)
                     floatingBubble?.visibility = View.VISIBLE
+
                 }
             }
 

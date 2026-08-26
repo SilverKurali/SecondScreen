@@ -25,7 +25,7 @@ class DecoderThread(
 ) {
     companion object {
         private const val TAG = "DecoderThread"
-        private const val MAX_QUEUE_SIZE = 8  // 足够容纳网络抖动（~133ms@60fps）
+        private const val MAX_QUEUE_SIZE = 3  // 低延迟：最多缓冲3帧（~50ms@60fps）
         private const val TIMEOUT_US = 10000L  // 10ms
     }
 
@@ -71,10 +71,13 @@ class DecoderThread(
     fun queueFrame(data: ByteArray, isKeyframe: Boolean, isConfig: Boolean) {
         if (!running) return
 
-        // Drop oldest frames when queue is too deep
+        // 队列满时：丢弃所有旧非关键帧，只保留最新的关键帧
         if (frameQueue.size >= MAX_QUEUE_SIZE) {
-            // Always keep the newest frame: drop oldest until there's room
-            while (frameQueue.size >= MAX_QUEUE_SIZE) {
+            if (isKeyframe) {
+                // 关键帧：清空整个队列，重新开始
+                frameQueue.clear()
+            } else {
+                // 非关键帧：丢掉最旧的，腾位置
                 frameQueue.poll()
             }
         }
@@ -174,20 +177,20 @@ class DecoderThread(
 
     private fun drainOutput(codec: MediaCodec) {
         val bufferInfo = MediaCodec.BufferInfo()
-        var drained = 0
-        while (drained < 10) {
+        // 排空所有可用输出缓冲，防止画面滞后堆积
+        while (true) {
             val outIndex = codec.dequeueOutputBuffer(bufferInfo, 0L)
             when {
                 outIndex >= 0 -> {
+                    // true = 渲染到 Surface（必须）
                     codec.releaseOutputBuffer(outIndex, true)
                     decodedFrames++
-                    drained++
                 }
                 outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     Log.d(TAG, "Output format changed: ${codec.outputFormat}")
                 }
-                outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> break
-                else -> break
+                outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> return
+                else -> return
             }
         }
         // 每 30 帧计算一次 FPS
