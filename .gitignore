@@ -30,3 +30,7 @@ Thumbs.db
 # 注意: host/venv 是项目内置虚拟环境（含 evdev 等 pip 依赖），已随仓库分发，
 #       运行时零安装，因此特意不忽略。GStreamer/PyGObject 仍为系统前置条件。
 !host/venv/
+# 打包中间产物（PyInstaller / AppImage 构建）
+host/dist/
+host/build/
+*.spec

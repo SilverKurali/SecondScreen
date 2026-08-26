@@ -163,6 +163,11 @@ Examples:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="无头自检运行库完整性（GTK4/GStreamer/编码器/协议）后退出，用于打包验证",
+    )
 
     args = parser.parse_args(argv)
 

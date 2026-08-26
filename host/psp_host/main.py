@@ -1,8 +1,6 @@
 """PSP Host entry point."""
 
 import logging
-import sys
-import socket
 
 from .config import parse_args
 from .capture import get_encoder_info, list_x11_outputs
@@ -17,6 +15,11 @@ def main():
     if getattr(args, "gui", False):
         from .gui import run_gui
         raise SystemExit(run_gui())
+
+    # Self-test mode: verify bundled runtime integrity (used by CI packaging)
+    if getattr(args, "selftest", False):
+        from .selftest import run_selftest
+        raise SystemExit(run_selftest())
 
     # Setup logging
     level = logging.DEBUG if args.debug else logging.INFO
@@ -73,7 +76,7 @@ def main():
         return
 
     # Print summary
-    print(f"PSP Host v0.5.0")
+    print("PSP Host v0.5.1")
     print(f"  Stream: {args.width}x{args.height} @ {args.fps} fps")
     print(f"  Bitrate: {args.bitrate_kbps} kbps")
     print(f"  Port: {args.port}")
@@ -83,7 +86,7 @@ def main():
     if args.region:
         print(f"  Region: {args.region}")
     if not args.no_input:
-        print(f"  Input: enabled (touch → mouse)")
+        print("  Input: enabled (touch → mouse)")
     print()
 
     run_server(args)
