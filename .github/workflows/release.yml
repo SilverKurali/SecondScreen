@@ -133,15 +133,15 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist\packages | Out-Null
           $VER = "${{ needs.read-version.outputs.version }}"
-          # 先复制到暂存目录再打包：剔除 Linux 专属产物 (host/venv、host/runtime)
-          # 与构建缓存。这些目录含软链接/超长路径，直接 Compress-Archive 会失败。
-          $stage = "stage\SecondScreen-$VER"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item -Recurse host, scripts, docs, README.md -Destination $stage
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
-            "$stage\host\venv", "$stage\host\runtime", "$stage\host\.gradle"
-          Compress-Archive -Path $stage -DestinationPath "dist\packages\SecondScreen-windows-x64-$VER.zip" -Force
-          Remove-Item -Recurse -Force stage
+          # 用 git archive 直接从仓库对象打包：天然规避 host/venv、host/runtime 中
+          # 的 Linux 软链接/超长路径问题（Compress-Archive/Copy-Item 会失败），
+          # 且不会带上这些平台专属产物。
+          git archive --format=zip `
+            -o "dist/packages/SecondScreen-windows-x64-$VER.zip" `
+            --prefix="SecondScreen-$VER/" HEAD -- `
+            host ":(exclude)host/venv" ":(exclude)host/runtime" `
+            scripts docs README.md
+          if ($LASTEXITCODE -ne 0) { throw "git archive failed: $LASTEXITCODE" }
           Write-Host "✓ Created zip"
           Get-ChildItem dist\packages | Format-Table Name, Length
 
