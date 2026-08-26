@@ -1,257 +1,174 @@
-# SecondScreen — Android 扩展屏
+# SecondScreen — 把 Android 设备变成电脑扩展屏
 
-[![Python CI](https://github.com/SecondScreen/actions/workflows/python-ci.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/python-ci.yml)
-[![Android CI](https://github.com/SecondScreen/actions/workflows/android-ci.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/android-ci.yml)
-[![ShellCheck](https://github.com/SecondScreen/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/SecondScreen/actions/workflows/shellcheck.yml)
+[![Python CI](https://github.com/SilverKurali/SecondScreen/actions/workflows/python-ci.yml/badge.svg)](https://github.com/SilverKurali/SecondScreen/actions/workflows/python-ci.yml)
+[![Android CI](https://github.com/SilverKurali/SecondScreen/actions/workflows/android-ci.yml/badge.svg)](https://github.com/SilverKurali/SecondScreen/actions/workflows/android-ci.yml)
+[![Release](https://github.com/SilverKurali/SecondScreen/actions/workflows/release.yml/badge.svg)](https://github.com/SilverKurali/SecondScreen/actions/workflows/release.yml)
+[![ShellCheck](https://github.com/SilverKurali/SecondScreen/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/SilverKurali/SecondScreen/actions/workflows/shellcheck.yml)
 
-将 ARM Android 设备（平板、手机、智慧屏）作为电脑的扩展屏幕使用，支持 **有线 (ADB USB)** 和 **局域网 WiFi** 连接。
+将 ARM Android 设备（平板、手机、智慧屏）作为电脑的**扩展屏幕**，支持 **USB (ADB 反向隧道)** 与 **局域网 WiFi** 两种连接方式，触摸操作实时回传为鼠标事件。
+
+## 下载发行版
+
+前往 [Releases](https://github.com/SilverKurali/SecondScreen/releases) 下载最新版本：
+
+| 产物 | 说明 |
+|------|------|
+| `SecondScreen-android-*.apk` | Android 客户端，直接安装（arm64-v8a / armeabi-v7a，Android 8.0+） |
+| `SecondScreen-linux-x64-*.tar.gz` | Linux 宿主端源码包 |
+| `SecondScreen-windows-x64-*.zip` | Windows 宿主端源码包（功能受限，见平台支持） |
+| `checksums.txt` | 产物校验和 |
 
 ## 功能特性
 
 | 特性 | 支持情况 |
 |------|---------|
-| 分辨率 | 750p (1280×750)、1080p (1920×1080)、2K (2560×1440) |
-| 帧率 | 60 / 90 / 120 fps |
-| 码率 | 根据分辨率和帧率自动调节，支持 0.5x~3x 质量倍率 |
-| 连接方式 | USB (ADB 反向隧道) / 局域网 WiFi |
-| 编码器 | H.264 (首选) / VP9 / VP8，自动检测最优 |
-| 触摸回传 | 触摸屏 → PC 鼠标（移动、点击、滚轮） |
-| 延迟优化 | MediaCodec 低延迟模式、零缓冲帧、GStreamer zerolatency |
-| 低配支持 | 编解码器自动降级，帧率自适应 |
+| 分辨率 | 720p / 750p / 1080p / 2K，协商时自动钳制并做偶数对齐 |
+| 帧率 | 60 / 90 / 120 / 144 fps，客户端可选"无限制"（跟随服务端上限） |
+| 画质倍率 | 0.5x ~ 3.0x，安卓端设置即时生效（上限为服务端基准码率 3 倍） |
+| 编码器 | H.264（默认）/ VP9 / VP8，自动检测：x264enc > nvh264enc > vaapih264enc > vp9enc > vp8enc |
+| 连接方式 | WiFi 局域网（UDP 自动发现）/ USB ADB 反向隧道 / 无线 ADB |
+| 触摸回传 | 移动、单击=左键、长按 500ms=右键、滚轮 |
+| 虚拟显示器 | 自动创建：Wayland Portal（Hyprland/GNOME/KDE）、Hyprland HEADLESS、EVDI、Xvfb 回退 |
+| 图形控制台 | GTK4 多标签 GUI（服务启停、实时日志、设备扫描、虚拟屏管理、工具箱） |
+| 延迟优化 | MediaCodec 低延迟解码、GStreamer zerolatency、零缓冲帧队列、TCP_NODELAY |
 
+## 快速开始
+
+### 1. 宿主端（PC）
+
+```bash
+git clone https://github.com/SilverKurali/SecondScreen.git
+cd SecondScreen
+
+# 一键安装全部依赖并创建内置 venv（支持 Debian/Ubuntu、Fedora、Arch、openSUSE）
+./setup.sh
+./setup.sh --check     # 仅环境自检，不安装
+
+# 图形控制台（推荐）
+./gui.py
+
+# 或者交互式管理菜单（启动/停止/虚拟屏/状态）
+./start.sh
+```
+
+命令行方式：
+
+```bash
+cd host
+python -m psp_host --resolution 1080p --fps 60          # 自动创建虚拟显示器
+python -m psp_host --output VIRTUAL1 --fps 90           # 指定已有输出
+python -m psp_host --region 1920,0,1920x1080            # 捕获指定区域
+python -m psp_host --adb auto --resolution 2K           # 自动设置 ADB 反向隧道
+python -m psp_host --list-outputs                       # 列出输出与编码器
+```
+
+### 2. 安卓端
+
+安装 Release 中的 APK（或 `cd android && ./gradlew assembleDebug` 自行构建），打开应用：
+
+- **WiFi 模式**：自动发现局域网内的 PSP 主机（UDP 4748），也可手动输入 IP:端口
+- **USB 模式**：USB 连接电脑后点「USB 模式」（宿主端用 `--adb auto` 已建好反向隧道，一键脚本见 `scripts/adb-usb-setup.sh`）
+
+连接后点悬浮球菜单可调 **画质设置**（分辨率 / 帧率 / 画质倍率）与 **编码器**（软件 x264 / 硬件 NVENC）。
+
+## 宿主端参数
+
+```
+显示/捕获:  -o/--output        X11 输出名（自动探测几何，扩展模式）
+            -r/--region        捕获区域 x,y,WxH
+            -f/--fullscreen    捕获整个主屏（不推荐）
+            -l/--list-outputs  列出输出与编码器
+
+视频质量:   --resolution       720p | 750p | 1080p | 2K（默认 1080p）
+            --fps              60 | 90 | 120 | 144（默认 60）
+            --quality          码率倍率 0.5-3.0（默认 1.0）
+            --codec            auto | h264 | vp9 | vp8
+
+连接:       -p/--port          TCP 端口（默认 4747）
+            --adb              off | auto | usb | wireless
+            --list-devices     扫描局域网主机与 ADB 设备
+
+其他:       --no-input         禁用触摸回传
+            --gui              启动 GTK4 图形控制台
+            --debug            调试日志
+```
+
+码率按 `(分辨率, 帧率)` 查基准表（如 1080p@60 = 10000 kbps、2K@144 = 38400 kbps），再乘画质倍率；安卓端与服务端共用同一套基准表。
+
+## 平台支持
+
+| 平台 | 捕获 | 虚拟显示器 | 输入注入 | 说明 |
+|------|------|-----------|---------|------|
+| Linux X11 | ximagesrc | Xorg dummy / intel-virtual-output | evdev uinput + xdotool | 完整支持 |
+| Linux Wayland | pipewiresrc (Portal) | Hyprland HEADLESS / EVDI / Xvfb | evdev uinput + hyprctl | Hyprland 最佳；GNOME 可能需 EVDI 模块（`host/setup-evdi.sh`） |
+| Windows | DXGI 屏幕捕获 | 需第三方驱动（未集成） | SendInput | 功能受限 |
+| Android 8.0+ | — | — | — | MediaCodec 硬解 H.264/VP9/VP8，仅 ARM |
+
+## 通信协议
+
+详见 [docs/PROTOCOL.md](docs/PROTOCOL.md)。要点：
+
+- TCP **4747**：二进制帧 = 4 字节小端长度 + 1 字节标志 + 载荷；标志位 bit0=关键帧、bit1=config、bit2=可丢弃、bit7=控制帧
+- JSON 握手（hello/welcome）协商编码、分辨率、帧率、码率；服务端按能力钳制并做偶数对齐，码率尊重客户端画质倍率（≤3 倍基准）
+- UDP **4748**：局域网主机发现（每个网段仅一个服务端）
+- 输入事件归一化坐标 (0..1)，服务端映射到虚拟显示器实际分辨率
+- 帧队列上限 3，队列满时丢弃非关键帧、关键帧清队（按设计）
 
 ## 项目结构
 
 ```
-ADB-PSP/
-├── host/                     # PC 端
-│   ├── psp_host/             # Python 包
-│   │   ├── config.py         # 分辨率/帧率/码率配置和 CLI 解析
-│   │   ├── protocol.py       # TCP 帧协议打包/解包
-│   │   ├── capture.py        # GStreamer 屏幕捕获和编码管道
-│   │   ├── input_linux.py    # Linux 输入注入 (xdotool/XTest)
-│   │   ├── input_windows.py  # Windows 输入注入 (SendInput)
-│   │   ├── server.py         # TCP 服务器和会话管理
-│   │   ├── main.py           # 入口点
-│   │   └── __main__.py       # python -m psp_host 支持
-│   ├── scripts/
-│   │   ├── setup-virtual-display.sh  # 创建虚拟显示器 (X11)
-│   │   └── 99-psp-dummy.conf         # Xorg 虚拟显示器驱动配置
-│   └── requirements.txt
-├── android/                  # Android 端 (Kotlin)
-│   ├── app/src/main/java/com/psp/app/
-│   │   ├── MainActivity.kt   # 主界面 + 触摸输入
-│   │   ├── StreamClient.kt   # TCP 连接 + 协议握手
-│   │   ├── DecoderThread.kt  # MediaCodec 硬件解码
-│   │   ├── InputSender.kt    # 输入事件回传
-│   │   └── SettingsDialog.kt # 画质设置对话框
-│   └── ... (Gradle 构建文件)
-├── scripts/
-│   └── adb-usb-setup.sh      # ADB USB 连接一键脚本
-├── docs/
-│   └── PROTOCOL.md           # 通信协议文档
-├── tests/
-│   └── test_protocol.py      # 协议单元测试 (13 项)
-└── README.md
+SecondScreen/
+├── host/                        # 宿主端（Python 3 + GStreamer）
+│   ├── psp_host/
+│   │   ├── main.py / __main__.py   # 入口
+│   │   ├── config.py               # 分辨率/帧率/码率表 + CLI
+│   │   ├── protocol.py             # 帧协议与协商
+│   │   ├── server.py               # TCP 服务与会话
+│   │   ├── capture.py              # GStreamer 捕获/编码管线
+│   │   ├── screencast.py           # Wayland Portal ScreenCast
+│   │   ├── vdisplay.py             # 虚拟显示器创建
+│   │   ├── gui.py                  # GTK4 图形控制台
+│   │   ├── input_linux.py / input_windows.py
+│   │   └── discovery.py            # UDP 发现 + ADB 监听
+│   ├── run.sh / setup-evdi.sh / bundle_runtime.sh
+│   └── scripts/                 # 虚拟显示器脚本
+├── android/                     # 安卓端（Kotlin）
+│   └── app/src/main/java/com/psp/app/
+│       ├── MainActivity.kt      # 主界面 + 触摸
+│       ├── StreamClient.kt      # TCP + 握手
+│       ├── DecoderThread.kt     # MediaCodec 解码
+│       ├── InputSender.kt       # 输入回传
+│       ├── SettingsDialog.kt    # 画质设置
+│       └── DiscoveryClient.kt   # UDP 发现
+├── scripts/adb-usb-setup.sh     # ADB 一键脚本
+├── docs/PROTOCOL.md
+├── tests/test_protocol.py       # 协议单元测试（17 项）
+├── gui.py                       # GUI 跨平台启动器
+├── setup.sh / start.sh
 ```
 
-
-## 快速开始
-
-### 方法一：一键安装（推荐）
-
-拉下代码后执行以下命令，脚本会自动识别你的发行版（Debian/Ubuntu、Fedora、Arch、openSUSE）并安装全部依赖：
+## 开发与测试
 
 ```bash
-./setup.sh
+# Python 检查（CI 同款）
+python3 -m flake8 --max-line-length=127 --max-complexity=15 host/psp_host/
+python3 -m mypy --ignore-missing-imports --follow-imports=skip host/psp_host/
+python3 -m unittest tests.test_protocol -v
+
+# 构建 APK（需 JDK 17 + Android SDK）
+cd android && ./gradlew assembleDebug --no-daemon
+
+# 发布发行版：打 tag 触发 Actions → Release（Linux/Windows/Android 三平台产物）
+git tag v0.x.0 && git push origin v0.x.0
 ```
-
-安装完成后运行环境自检，检查缺什么会给出明确提示。也可以随时重跑自检：
-
-```bash
-./setup.sh --check
-```
-
-### 方法二：手动安装
-
-**1. 安装依赖**
-
-```bash
-# GStreamer + 编码器
-sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-                 gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-                 python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
-
-# 输入注入 (Linux)
-sudo apt install xdotool
-
-# 虚拟显示器 (可选，用于扩展模式)
-sudo apt install xserver-xorg-video-intel  # Intel GPU
-```
-
-> 💡 Wayland 用户（Hyprland/GNOME/KDE）还需安装：`gstreamer1.0-pipewire`、`xdg-desktop-portal-*`（对应桌面后端，如 `xdg-desktop-portal-hyprland`）；`screencast.py` 会自动检测后端并直连，无需额外配置。
-
-**2. 启动服务端**
-
-```bash
-cd host
-
-# 查看可用编码器和显示器输出
-python -m psp_host --list-outputs
-
-# 方式一：WiFi 连接（先创建虚拟显示器，见下方）
-python -m psp_host --output VIRTUAL1 --resolution 1080p --fps 90
-
-# 方式二：USB 连接（ADB 反向隧道自动设置）
-python -m psp_host --adb-usb --resolution 1080p --fps 90
-
-# 方式三：指定捕获区域（无需虚拟显示器，但会镜像该区域）
-python -m psp_host --region 0,0,1920x1080 --fps 60
-```
-
-### 创建虚拟显示器 (扩展模式)
-
-**方法一：Xorg 配置 (推荐，重启后生效)**
-
-```bash
-sudo cp host/scripts/99-psp-dummy.conf /etc/X11/xorg.conf.d/
-# 重启 X11 会话，然后:
-host/scripts/setup-virtual-display.sh --mode 1920x1080 --rate 60
-```
-
-**方法二：Intel GPU 动态创建**
-
-```bash
-host/scripts/setup-virtual-display.sh --mode 1920x1080 --rate 60
-```
-
-方法二会自动尝试 `intel-virtual-output` 等工具，不需要重启动。
-
-
-### Android 端 (ARM)
-
-**1. 构建 APK**
-
-在 Android Studio 中打开 `android/` 目录，构建并安装到设备：
-
-```bash
-# 或者用命令行:
-cd android
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-**2. 连接**
-
-- **WiFi 模式**: 打开 PSP 应用，输入 PC 的局域网 IP 和端口
-- **USB 模式**: 用 USB 连接手机，PC 运行 `adb reverse`，然后点 Android 上的「USB 模式」
-
-```bash
-# 一键完成 USB 连接
-./scripts/adb-usb-setup.sh --start-host -- --resolution 1080p --fps 90
-```
-
-
-## 使用场景
-
-### 平板作为扩展屏
-
-1. 平板通过 USB 连接电脑
-2. PC 运行 `python -m psp_host --adb-usb --resolution 2K --fps 60`
-3. 平板打开 PSP 应用，点击「USB 模式」
-4. 平板将显示扩展桌面，拖动窗口到平板方向
-
-### 老旧手机作为监控副屏
-
-1. 手机通过 WiFi 连接局域网
-2. PC 创建虚拟显示器：`setup-virtual-display.sh --mode 1920x1080 --rate 60`
-3. PC 启动服务：`python -m psp_host --output VIRTUAL1 --resolution 1080p --fps 60`
-4. 手机打开 PSP 应用，输入 PC IP 地址连接
-
-### 智慧屏/电视盒子作为大屏显示器
-
-1. 电视盒子通过网线连接到局域网
-2. PC 端以 2K@60 运行
-3. 电视盒子安装 PSP 应用，触摸/鼠标操作通过遥控器或蓝牙鼠标
-
-
-## 高级用法
-
-### 参数详解
-
-```bash
-# 全量参数
-python -m psp_host --help
-
-# 示例：1080p@120fps 高质量
-python -m psp_host --output VIRTUAL1 --resolution 1080p --fps 120 --quality 2.0
-
-# 示例：2K@90fps 中等带宽
-python -m psp_host --output VIRTUAL1 --resolution 2K --fps 90 --quality 1.0
-
-# 示例：指定端口和多设备
-python -m psp_host --port 4748 --region 1920,0,1920x1080
-
-# 禁用输入回传（仅显示）
-python -m psp_host --output VIRTUAL1 --no-input
-```
-
-### 延迟优化
-
-| 优化项 | 说明 |
-|--------|------|
-| USB 有线连接 | 延迟最低 (~5-15ms) |
-| 5GHz WiFi | 推荐，避开 2.4GHz 干扰 |
-| H.264 编码器 | 延迟最低，兼容性最好 |
-| 关闭输入回传 | 减少输入处理开销 |
-| 降低帧率 | 60fps 比 120fps 编码延迟更低 |
-| x264enc ultrafast | 最低编码延迟（但压缩率低，带宽需求大） |
-
-
-## 编解码器说明
-
-| 编码器 | 需要安装 | 延迟 | 画质 | 兼容性 |
-|--------|---------|------|------|--------|
-| x264enc (软) | `gstreamer1.0-plugins-ugly` | ⭐⭐⭐ | ⭐⭐⭐ | 所有 Android |
-| nvh264enc (硬) | NVIDIA 驱动 + gst-plugins-bad | ⭐⭐⭐⭐ | ⭐⭐⭐ | NVIDIA GPU |
-| vaapih264enc (硬) | `gstreamer1.0-vaapi` | ⭐⭐⭐⭐ | ⭐⭐⭐ | Intel/AMD GPU |
-| vp9enc (软) | `gstreamer1.0-plugins-good` | ⭐⭐ | ⭐⭐⭐⭐ | Android 5+ |
-| vp8enc (软) | `gstreamer1.0-plugins-good` | ⭐⭐⭐ | ⭐⭐ | 所有 Android |
-
-系统会自动检测最优编码器，优先级：x264enc > nvh264enc > vaapih264enc > vp9enc > vp8enc。
-
-
-## 通信协议
-
-参考 `docs/PROTOCOL.md`。简要：
-
-- 基于 TCP，默认端口 4747
-- JSON 握手协商参数
-- 视频帧通过二进制帧传输（长度前缀 + 标志位 + 编码数据）
-- 控制/输入消息复用同一 TCP 连接（通过标志位区分）
-- 输入坐标归一化到 0..1，支持鼠标移动、点击、滚轮
-
 
 ## 已知限制
 
-- **Wayland**: 当前仅支持 X11 截屏。Wayland 用户可尝试 `pipewiresrc` 或使用 XWayland 回退
-- **Windows 虚拟显示器**: 需要第三方驱动（如 `usbmmidd_v2` 或 IddSampleDriver），暂未集成
-- **Android 编解码器**: 部分设备的 VP9 解码器可能不支持 120fps。H.264 兼容性最好
-- **音频**: 暂不支持音频传输，仅视频
-- **多连接**: 当前仅支持单设备连接
-
-
-## 开发计划
-
-- [ ] Wayland 支持 (PipeWire screencast portal)
-- [ ] Windows 虚拟显示器集成
-- [ ] 自适应码率 (根据网络条件动态调节)
-- [ ] 多设备同时连接
-- [ ] 音频传输
-- [ ] 自动发现设备 (mDNS)
-- [ ] 剪切板同步
-- [ ] 键盘输入回传
-
+- **键盘输入**：协议预留 `key` 事件，宿主端尚未实现
+- **音频**：仅视频传输，暂不支持音频
+- **多连接**：单服务端面向单设备（局域网发现仅广播一个实例）
+- **Windows**：捕获可用，虚拟显示器需第三方驱动，输入注入受限
+- **输入权限**：Linux evdev 注入需用户在 `input` 组（`setup.sh` 自动添加，**重启后生效**）；缺失时鼠标按键/滚轮会静默失败
 
 ## 许可证
 
