@@ -54,6 +54,38 @@ for cand in "$MROOT/bin/gst-plugin-scanner.exe" \
 done
 du -sh runtime || true
 
+echo "==> PyInstaller GUI 构建（无控制台窗口，双击直启图形界面）"
+cd "$HOST_DIR"
+python -m PyInstaller --noconfirm --clean --onedir --windowed \
+    --name psp-host-gui \
+    --paths "$HOST_DIR" \
+    --hidden-import gi \
+    --hidden-import gi.repository \
+    --hidden-import psp_host \
+    packaging/entry_gui.py
+
+# GUI exe 放入 gui/ 子目录；runtime 在其上一级，
+# runtime_env.bootstrap() 会自动向上发现并挂载。
+cd "$HOST_DIR/dist/psp-host"
+mkdir -p gui
+mv "$HOST_DIR/dist/psp-host-gui/psp-host-gui.exe" gui/
+mv "$HOST_DIR/dist/psp-host-gui/_internal" gui/_internal
+rm -rf "$HOST_DIR/dist/psp-host-gui"
+# 剔除钩子收集的 GTK/GLib/GStreamer 家族库：runtime/lib 是唯一权威来源，
+# 与 AppImage 清理策略一致（重复副本存在 GType 双重注册风险）。
+rm -f gui/_internal/libgtk* gui/_internal/libgdk* \
+      gui/_internal/libglib* gui/_internal/libgobject* \
+      gui/_internal/libgio* gui/_internal/libgmodule* \
+      gui/_internal/libgthread* gui/_internal/libgirepository* \
+      gui/_internal/libpango* gui/_internal/libcairo* \
+      gui/_internal/libatk* gui/_internal/libgst* 2>/dev/null || true
+rm -rf gui/_internal/gi_typelibs gui/_internal/gst_plugins \
+       gui/_internal/lib/gdk-pixbuf 2>/dev/null || true
+# GTK4 需要 GSettings schema
+mkdir -p gui/_internal/share/glib-2.0/schemas
+cp -n "$MROOT/share/glib-2.0/schemas/gschemas.compiled" \
+      gui/_internal/share/glib-2.0/schemas/ 2>/dev/null || true
+
 echo "==> 冒烟自检 (--selftest)"
 # 临时 HOME + 重试：避免自检被中断时半写的 GStreamer 注册表污染后续运行，
 # 以及构建期系统瞬时状态导致的偶发加载异常。

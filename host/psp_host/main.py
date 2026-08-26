@@ -92,7 +92,7 @@ def main():
         return
 
     # Print summary
-    print("PSP Host v0.5.1")
+    print("PSP Host v0.5.2")
     print(f"  Stream: {args.width}x{args.height} @ {args.fps} fps")
     print(f"  Bitrate: {args.bitrate_kbps} kbps")
     print(f"  Port: {args.port}")

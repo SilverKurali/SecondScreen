@@ -25,8 +25,14 @@ def _candidate_bases():
     bases = []
     if getattr(sys, "frozen", False):
         # PyInstaller onedir: exe 所在目录；onefile: _MEIPASS 解压目录
-        bases.append(os.path.dirname(os.path.abspath(sys.executable)))
-        bases.append(os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "_internal"))
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        bases.append(exe_dir)
+        bases.append(os.path.join(exe_dir, "_internal"))
+        # GUI 子目录布局（如 Windows 便携包 gui\psp-host-gui.exe）：
+        # runtime 与主 exe 同级，在 exe 目录的上一级。
+        parent = os.path.dirname(exe_dir)
+        if parent != exe_dir:
+            bases.append(parent)
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             bases.append(meipass)

@@ -2,7 +2,7 @@
 #
 # 触发方式:
 #   1. 手动: Actions → Release → Run workflow (可填版本号)
-#   2. 打 tag: git tag v0.5.1 && git push origin v0.5.1
+#   2. 打 tag: git tag v0.5.2 && git push origin v0.5.2
 #
 # 产物（全部免安装、免依赖下载）:
 #   - Linux x64     : AppImage（捆绑 Python + GTK4 GUI + GStreamer + 编码器）
@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号 (如 0.5.1)"
+        description: "版本号 (如 0.5.2)"
         required: true
-        default: "0.5.1"
+        default: "0.5.2"
         type: string
   push:
     tags:
@@ -203,8 +203,8 @@ jobs:
           ## SecondScreen v${VER} — 点击即用发行版
 
           ### 📦 产物（全部免安装、免依赖下载）
-          - **Linux**: SecondScreen-linux-x64-\${VER}.AppImage — 捆绑 Python+GTK4+GStreamer+编码器，\`chmod +x\` 后双击/命令行运行
-          - **Windows**: SecondScreen-windows-x64-\${VER}.zip — 解压后直接运行 psp-host.exe
+          - **Linux**: SecondScreen-linux-x64-\${VER}.AppImage — 捆绑 Python+GTK4+GStreamer+编码器，双击直接打开图形控制台；终端运行可走 CLI 服务模式
+          - **Windows**: SecondScreen-windows-x64-\${VER}.zip — 解压后双击 \`gui/psp-host-gui.exe\` 打开图形控制台（无控制台弹窗）；\`psp-host.exe\` 为 CLI 服务模式
           - **Android**: SecondScreen-android-\${VER}.apk — 直接安装 (arm64 + armv7, Android 8.0+)
 
           所有产物在 CI 中通过 \`--selftest\` 冒烟自检（GTK4 GUI 类型库 / GStreamer /
@@ -213,12 +213,14 @@ jobs:
           ### 🚀 快速开始
           **Linux** (Wayland 会话本身仍需系统自带，属桌面组件):
           \`\`\`bash
-          ./SecondScreen-linux-x64-\${VER}.AppImage          # 启动服务（自动创建虚拟屏）
-          ./SecondScreen-linux-x64-\${VER}.AppImage --gui    # GTK4 图形控制台
+          # 双击 AppImage 图标 → 直接打开 GTK4 图形控制台（推荐）
+          ./SecondScreen-linux-x64-\${VER}.AppImage          # 终端：CLI 服务模式（自动创建虚拟屏）
+          ./SecondScreen-linux-x64-\${VER}.AppImage --gui    # 终端：图形控制台
           \`\`\`
           若系统不支持 FUSE: \`./xxx.AppImage --appimage-extract-and-run\`
 
-          **Windows**: 解压 zip → 双击 \`psp-host.exe\`（或 \`psp-host.exe --gui\`）。
+          **Windows**: 解压 zip → 双击 \`gui/psp-host-gui.exe\`（图形控制台，无弹窗）；
+          \`psp-host.exe\` / \`psp-host.exe --gui\` 为命令行方式。
           Windows 虚拟显示器需第三方驱动（见 README）。
 
           **Android**: 安装 APK → 自动发现局域网主机或手动输入 IP → 连接。

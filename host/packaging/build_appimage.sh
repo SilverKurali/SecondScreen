@@ -200,14 +200,15 @@ exec "$HERE/usr/bin/psp-host/psp-host" "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
 
+# 双击桌面图标直启 GTK4 图形控制台（--gui）；终端直接运行不带参数时仍为 CLI 服务模式
 cat > "$APPDIR/psp-host.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
 Name=PSP Host
 Comment=Stream PC screen to Android device as an extended display
-Exec=psp-host
+Exec=psp-host --gui
 Icon=psp-host
-Terminal=true
+Terminal=false
 Categories=Network;RemoteAccess;
 DESKTOP
 
