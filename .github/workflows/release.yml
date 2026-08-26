@@ -80,10 +80,15 @@ jobs:
           mkdir -p dist/packages
           VER="${{ needs.read-version.outputs.version }}"
           TARBALL="SecondScreen-linux-x64-${VER}.tar.gz"
+          # 排除平台产物：venv/runtime 由 setup.sh / bundle_runtime.sh 在目标机器生成，
+          # 且含大量软链接，不应随源码包分发。
           tar -czf "dist/packages/${TARBALL}" \
+            --exclude='host/venv' \
+            --exclude='host/runtime' \
             host/ scripts/ docs/ README.md \
             --transform "s,^,SecondScreen-${VER}/,"
           echo "✓ Created ${TARBALL}"
+          ls -lh "dist/packages/${TARBALL}"
 
       - name: PyInstaller build (best-effort)
         continue-on-error: true
@@ -128,8 +133,17 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist\packages | Out-Null
           $VER = "${{ needs.read-version.outputs.version }}"
-          Compress-Archive -Path host, scripts, docs, README.md -DestinationPath "dist\packages\SecondScreen-windows-x64-$VER.zip" -Force
+          # 先复制到暂存目录再打包：剔除 Linux 专属产物 (host/venv、host/runtime)
+          # 与构建缓存。这些目录含软链接/超长路径，直接 Compress-Archive 会失败。
+          $stage = "stage\SecondScreen-$VER"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse host, scripts, docs, README.md -Destination $stage
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            "$stage\host\venv", "$stage\host\runtime", "$stage\host\.gradle"
+          Compress-Archive -Path $stage -DestinationPath "dist\packages\SecondScreen-windows-x64-$VER.zip" -Force
+          Remove-Item -Recurse -Force stage
           Write-Host "✓ Created zip"
+          Get-ChildItem dist\packages | Format-Table Name, Length
 
       - name: PyInstaller build (best-effort)
         continue-on-error: true
@@ -248,6 +262,8 @@ jobs:
         run: |
           VER="${{ needs.read-version.outputs.version }}"
           TAG="v${VER}"
+          # 幂等：若同名 Release 已存在（重跑场景）先删除再重建
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" \
             --title "SecondScreen v${VER}" \
             --notes-file release-notes.md \
